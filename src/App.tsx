@@ -795,11 +795,15 @@ export default function App(){
                   </>}
                 </div>
                 {viewMode==="grid"?(
-                  <div onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:6}}>
+                  <div
+                    onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}}
+                    style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:6,userSelect:"none",WebkitUserSelect:"none"}}>
                     {filtered.map((mon:any)=><GridCard key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} isAnchor={rangeAnchor===mon.id} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox} onLongPress={handleLongPress}/>)}
                   </div>
                 ):(
-                  <div onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}} style={{border:`1px solid ${dex.screenDim}`,borderRadius:8,overflow:"hidden"}}>
+                  <div
+                    onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}}
+                    style={{border:`1px solid ${dex.screenDim}`,borderRadius:8,overflow:"hidden",userSelect:"none",WebkitUserSelect:"none"}}>
                     {filtered.map((mon:any)=><ListRow key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} isAnchor={rangeAnchor===mon.id} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox} onLongPress={handleLongPress}/>)}
                   </div>
                 )}
