@@ -342,6 +342,7 @@ function GridCard({mon,caught,selected,selectMode,isAnchor,onToggle,onDetail,onC
   const types=(CATCH_DATA as any)[mon.id]?.types||[];
   const longPressTimer=useState<any>(null);
   const startLongPress=(e:React.TouchEvent)=>{
+    e.preventDefault();
     longPressTimer[1](setTimeout(()=>onLongPress(mon),500));
   };
   const cancelLongPress=()=>{
@@ -356,8 +357,8 @@ function GridCard({mon,caught,selected,selectMode,isAnchor,onToggle,onDetail,onC
       {selectMode&&<input type="checkbox" checked={selected} onChange={e=>onCheckbox(mon.id,e)} onClick={e=>e.stopPropagation()} style={{position:"absolute",top:5,right:5,width:14,height:14,cursor:"pointer",accentColor:"#5588ff"}}/>}
       {isAnchor&&<span style={{position:"absolute",top:4,left:4,fontSize:10}}>⚓</span>}
       <span style={{fontSize:10,color:isAnchor?"#ffcc44":selected?"#8899ff":dex.screenHeading,alignSelf:"flex-start",paddingLeft:isAnchor?16:4,fontFamily:"monospace"}}>#{String(mon.id).padStart(3,"0")}</span>
-      <img src={spriteUrl(mon.id)} alt={mon.name} width={48} height={48} style={{imageRendering:"pixelated",filter:caught?"none":"grayscale(100%)"}} onError={e=>{(e.target as HTMLImageElement).style.opacity="0.1";}}/>
-      <span style={{fontSize:11,color:dex.screenText,textAlign:"center",lineHeight:1.2,width:"100%",padding:"0 3px",wordBreak:"break-word",fontFamily:"monospace"}}>{mon.name}</span>
+      <img src={spriteUrl(mon.id)} alt={mon.name} width={48} height={48} style={{imageRendering:"pixelated",filter:caught?"none":"grayscale(100%)",pointerEvents:"none"}} onError={e=>{(e.target as HTMLImageElement).style.opacity="0.1";}}/>
+      <span style={{fontSize:11,color:dex.screenText,textAlign:"center",lineHeight:1.2,width:"100%",padding:"0 3px",wordBreak:"break-word",fontFamily:"monospace",pointerEvents:"none"}}>{mon.name}</span>
       <div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center"}}>{types.map((t:string)=><TypeBadge key={t} type={t}/>)}</div>
       <div onClick={e=>{e.stopPropagation();onToggle(mon.id);}} style={{marginTop:4}}><Pokeball caught={caught} size={26}/></div>
     </div>
@@ -738,7 +739,8 @@ export default function App(){
         <span style={{color:"#fff",fontWeight:500,fontSize:13,fontFamily:"monospace",marginLeft:4}}>POKÉDEX</span>
         <span style={{color:"rgba(255,255,255,0.6)",fontSize:12,fontFamily:"monospace"}}>— {username}</span>
         {saving&&<span style={{fontSize:11,color:"rgba(255,255,255,0.5)",fontFamily:"monospace"}}>saving...</span>}
-        <button onClick={handleLogout} style={{marginLeft:"auto",background:"none",border:"1px solid rgba(255,255,255,0.3)",borderRadius:6,color:"rgba(255,255,255,0.7)",fontSize:11,padding:"3px 10px",cursor:"pointer",fontFamily:"monospace"}}>LOGOUT</button>
+        <span style={{marginLeft:"auto",fontSize:10,color:"rgba(255,255,255,0.35)",fontFamily:"monospace"}}>v0.1.0</span>
+        <button onClick={handleLogout} style={{background:"none",border:"1px solid rgba(255,255,255,0.3)",borderRadius:6,color:"rgba(255,255,255,0.7)",fontSize:11,padding:"3px 10px",cursor:"pointer",fontFamily:"monospace"}}>LOGOUT</button>
       </div>
       <div style={{background:dex.darkRed,display:"flex",padding:"0 14px",gap:2}}>
         {["tracker","friends"].map(t=>(
