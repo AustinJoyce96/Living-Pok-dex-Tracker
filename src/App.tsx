@@ -338,12 +338,24 @@ function DexButton({onClick,active=false,children,style={}}:{onClick:()=>void,ac
   );
 }
 
-function GridCard({mon,caught,selected,selectMode,onToggle,onDetail,onCardClick,onCheckbox}:{mon:any,caught:boolean,selected:boolean,selectMode:boolean,onToggle:any,onDetail:any,onCardClick:any,onCheckbox:any}){
+function GridCard({mon,caught,selected,selectMode,isAnchor,onToggle,onDetail,onCardClick,onCheckbox,onLongPress}:{mon:any,caught:boolean,selected:boolean,selectMode:boolean,isAnchor:boolean,onToggle:any,onDetail:any,onCardClick:any,onCheckbox:any,onLongPress:any}){
   const types=(CATCH_DATA as any)[mon.id]?.types||[];
+  const longPressTimer=useState<any>(null);
+  const startLongPress=(e:React.TouchEvent)=>{
+    longPressTimer[1](setTimeout(()=>onLongPress(mon),500));
+  };
+  const cancelLongPress=()=>{
+    if(longPressTimer[0])clearTimeout(longPressTimer[0]);
+  };
+  const borderColor=isAnchor?"#ffcc44":selected?"#5588ff":caught?"#3a5a2a":dex.screenDim;
+  const bg=isAnchor?"#1a1500":selected?"#0d1a30":caught?"#0d1f0d":dex.screenBg;
   return (
-    <div onClick={e=>onCardClick(mon,e,()=>onDetail(mon))} style={{border:`1px solid ${selected?"#5588ff":caught?"#3a5a2a":dex.screenDim}`,borderRadius:8,background:selected?"#0d1a30":caught?"#0d1f0d":dex.screenBg,padding:"8px 4px 6px",display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",opacity:caught||selected?1:0.55,transition:"all 0.15s",outline:selected?"2px solid #5588ff":"none",position:"relative"}}>
+    <div onClick={e=>onCardClick(mon,e,()=>onDetail(mon))}
+      onTouchStart={startLongPress} onTouchEnd={cancelLongPress} onTouchMove={cancelLongPress}
+      style={{border:`1px solid ${borderColor}`,borderRadius:8,background:bg,padding:"8px 4px 6px",display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",opacity:caught||selected||isAnchor?1:0.55,transition:"all 0.15s",outline:isAnchor?`2px solid #ffcc44`:selected?"2px solid #5588ff":"none",position:"relative"}}>
       {selectMode&&<input type="checkbox" checked={selected} onChange={e=>onCheckbox(mon.id,e)} onClick={e=>e.stopPropagation()} style={{position:"absolute",top:5,right:5,width:14,height:14,cursor:"pointer",accentColor:"#5588ff"}}/>}
-      <span style={{fontSize:10,color:selected?"#8899ff":dex.screenHeading,alignSelf:"flex-start",paddingLeft:4,fontFamily:"monospace"}}>#{String(mon.id).padStart(3,"0")}</span>
+      {isAnchor&&<span style={{position:"absolute",top:4,left:4,fontSize:10}}>⚓</span>}
+      <span style={{fontSize:10,color:isAnchor?"#ffcc44":selected?"#8899ff":dex.screenHeading,alignSelf:"flex-start",paddingLeft:isAnchor?16:4,fontFamily:"monospace"}}>#{String(mon.id).padStart(3,"0")}</span>
       <img src={spriteUrl(mon.id)} alt={mon.name} width={48} height={48} style={{imageRendering:"pixelated",filter:caught?"none":"grayscale(100%)"}} onError={e=>{(e.target as HTMLImageElement).style.opacity="0.1";}}/>
       <span style={{fontSize:11,color:dex.screenText,textAlign:"center",lineHeight:1.2,width:"100%",padding:"0 3px",wordBreak:"break-word",fontFamily:"monospace"}}>{mon.name}</span>
       <div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center"}}>{types.map((t:string)=><TypeBadge key={t} type={t}/>)}</div>
@@ -352,12 +364,19 @@ function GridCard({mon,caught,selected,selectMode,onToggle,onDetail,onCardClick,
   );
 }
 
-function ListRow({mon,caught,selected,selectMode,onToggle,onDetail,onCardClick,onCheckbox}:{mon:any,caught:boolean,selected:boolean,selectMode:boolean,onToggle:any,onDetail:any,onCardClick:any,onCheckbox:any}){
+function ListRow({mon,caught,selected,selectMode,isAnchor,onToggle,onDetail,onCardClick,onCheckbox,onLongPress}:{mon:any,caught:boolean,selected:boolean,selectMode:boolean,isAnchor:boolean,onToggle:any,onDetail:any,onCardClick:any,onCheckbox:any,onLongPress:any}){
   const types=(CATCH_DATA as any)[mon.id]?.types||[];
+  const longPressTimer=useState<any>(null);
+  const startLongPress=()=>{longPressTimer[1](setTimeout(()=>onLongPress(mon),500));};
+  const cancelLongPress=()=>{if(longPressTimer[0])clearTimeout(longPressTimer[0]);};
+  const borderColor=isAnchor?"2px solid #ffcc44":selected?"2px solid #5588ff":"none";
   return (
-    <div onClick={e=>onCardClick(mon,e,()=>onDetail(mon))} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",borderBottom:`1px solid ${dex.screenDim}`,cursor:"pointer",background:selected?"#0d1a30":caught?"#0d1f0d":"transparent",outline:selected?"2px solid #5588ff":"none"}}>
+    <div onClick={e=>onCardClick(mon,e,()=>onDetail(mon))}
+      onTouchStart={startLongPress} onTouchEnd={cancelLongPress} onTouchMove={cancelLongPress}
+      style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",borderBottom:`1px solid ${dex.screenDim}`,cursor:"pointer",background:isAnchor?"#1a1500":selected?"#0d1a30":caught?"#0d1f0d":"transparent",outline:borderColor}}>
       {selectMode&&<input type="checkbox" checked={selected} onChange={e=>onCheckbox(mon.id,e)} onClick={e=>e.stopPropagation()} style={{width:14,height:14,cursor:"pointer",accentColor:"#5588ff",flexShrink:0}}/>}
-      <span style={{fontSize:11,color:selected?"#8899ff":dex.screenHeading,minWidth:32,fontFamily:"monospace"}}>#{String(mon.id).padStart(3,"0")}</span>
+      {isAnchor&&<span style={{fontSize:12}}>⚓</span>}
+      <span style={{fontSize:11,color:isAnchor?"#ffcc44":selected?"#8899ff":dex.screenHeading,minWidth:32,fontFamily:"monospace"}}>#{String(mon.id).padStart(3,"0")}</span>
       <img src={spriteUrl(mon.id)} alt={mon.name} width={36} height={36} style={{imageRendering:"pixelated",filter:caught?"none":"grayscale(100%)",opacity:caught?1:0.45}} onError={e=>{(e.target as HTMLImageElement).style.opacity="0.1";}}/>
       <span style={{flex:1,fontSize:13,color:dex.screenText,fontFamily:"monospace",fontWeight:caught?500:400}}>{mon.name}</span>
       <div style={{display:"flex",gap:3}}>{types.map((t:string)=><TypeBadge key={t} type={t}/>)}</div>
@@ -526,7 +545,7 @@ export default function App(){
   const [viewMode,setViewMode]=useState("grid");
   const [selected,setSelected]=useState(new Set<number>());
   const [selectMode,setSelectMode]=useState(false);
-  const [lastClicked,setLastClicked]=useState<number|null>(null);
+  const [rangeAnchor,setRangeAnchor]=useState<number|null>(null);
   const [savedProfiles,setSavedProfiles]=useState<{name:string,count:number}[]>([]);
 
   const loadUser=useCallback(async(name:string)=>{
@@ -598,7 +617,13 @@ export default function App(){
         const anchorIdx=visibleIds.indexOf(lastClicked);
         const [lo,hi]=[Math.min(anchorIdx,clickedIdx),Math.max(anchorIdx,clickedIdx)];
         setSelected(prev=>{const next=new Set(prev);visibleIds.slice(lo,hi+1).forEach((id:number)=>next.add(id));return next;});
-      }else{
+      } else if(rangeAnchor!==null&&rangeAnchor!==mon.id&&visibleIds.includes(rangeAnchor)){
+        // mobile: tap to complete range from anchor
+        const anchorIdx=visibleIds.indexOf(rangeAnchor);
+        const [lo,hi]=[Math.min(anchorIdx,clickedIdx),Math.max(anchorIdx,clickedIdx)];
+        setSelected(prev=>{const next=new Set(prev);visibleIds.slice(lo,hi+1).forEach((id:number)=>next.add(id));return next;});
+        setRangeAnchor(null);
+      } else {
         setSelected(prev=>{const next=new Set(prev);next.has(mon.id)?next.delete(mon.id):next.add(mon.id);return next;});
       }
       setLastClicked(mon.id);
@@ -607,13 +632,21 @@ export default function App(){
     }
   };
 
+  const handleLongPress=(mon:any)=>{
+    if(!selectMode)return;
+    setRangeAnchor(mon.id);
+    // make sure it's selected too
+    setSelected(prev=>{const next=new Set(prev);next.add(mon.id);return next;});
+    setLastClicked(mon.id);
+  };
+
   const toggleCheckbox=(id:number,e:React.ChangeEvent)=>{
     e.stopPropagation();
     setSelected(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});
     setLastClicked(id);
   };
 
-  const exitSelectMode=()=>{setSelectMode(false);setSelected(new Set());setLastClicked(null);};
+  const exitSelectMode=()=>{setSelectMode(false);setSelected(new Set());setLastClicked(null);setRangeAnchor(null);};
 
   const applyBulk=(markAs:boolean)=>{
     const next:{[key:string]:boolean}={...caught};
@@ -750,7 +783,9 @@ export default function App(){
                   <DexButton onClick={()=>{setSelectMode(v=>!v);if(selectMode)exitSelectMode();}} active={selectMode} style={{fontSize:11,padding:"3px 10px"}}>
                     {selectMode?"Exit select (S)":"Select (S)"}
                   </DexButton>
-                  {selectMode&&!selected.size&&<span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>click to pick · shift+click for range</span>}
+                  {selectMode&&!selected.size&&<span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>tap to pick · long press to anchor range · shift+click on desktop</span>}
+                  {selectMode&&selected.size>0&&!rangeAnchor&&<span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>long press to set range anchor</span>}
+                  {rangeAnchor&&<span style={{fontSize:11,color:"#ffcc44",fontFamily:"monospace"}}>⚓ anchor set — tap another to complete range</span>}
                   {selected.size>0&&<>
                     <span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>{selected.size} selected</span>
                     <DexButton onClick={()=>applyBulk(true)} style={{fontSize:11,padding:"3px 10px",background:"#1a3a1a",borderColor:"#3a6a2a",color:"#88cc88"}}>Mark caught</DexButton>
@@ -760,11 +795,11 @@ export default function App(){
                 </div>
                 {viewMode==="grid"?(
                   <div onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:6}}>
-                    {filtered.map((mon:any)=><GridCard key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox}/>)}
+                    {filtered.map((mon:any)=><GridCard key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} isAnchor={rangeAnchor===mon.id} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox} onLongPress={handleLongPress}/>)}
                   </div>
                 ):(
                   <div onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}} style={{border:`1px solid ${dex.screenDim}`,borderRadius:8,overflow:"hidden"}}>
-                    {filtered.map((mon:any)=><ListRow key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox}/>)}
+                    {filtered.map((mon:any)=><ListRow key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} isAnchor={rangeAnchor===mon.id} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox} onLongPress={handleLongPress}/>)}
                   </div>
                 )}
                 {filtered.length===0&&<p style={{color:dex.screenMuted,fontSize:13,textAlign:"center",padding:"2rem 0",fontFamily:"monospace"}}>No Pokémon found.</p>}
