@@ -545,6 +545,7 @@ export default function App(){
   const [viewMode,setViewMode]=useState("grid");
   const [selected,setSelected]=useState(new Set<number>());
   const [selectMode,setSelectMode]=useState(false);
+  const [lastClicked,setLastClicked]=useState<number|null>(null);
   const [rangeAnchor,setRangeAnchor]=useState<number|null>(null);
   const [savedProfiles,setSavedProfiles]=useState<{name:string,count:number}[]>([]);
 
