@@ -453,6 +453,7 @@ function DetailPanel({mon,onClose}:{mon:any,onClose:()=>void}){
         ))].filter((v:any)=>VERSION_GROUPS[v]) as string[];
         vgs.sort((a,b)=>VERSION_GROUPS[a].gen-VERSION_GROUPS[b].gen);
         setAvailableVersions(vgs);
+        setVersionGroup("__none__");
         setVersionGroup(vgs[vgs.length-1]);
       }catch(e){console.error(e);}
       finally{setLoading(false);}
@@ -461,7 +462,7 @@ function DetailPanel({mon,onClose}:{mon:any,onClose:()=>void}){
   },[mon.id]);
 
   useEffect(()=>{
-    if(!canFetch||!versionGroup)return;
+    if(!canFetch||!versionGroup||versionGroup==="__none__")return;
     const load=async()=>{
       setLoading(true);
       try{
@@ -521,7 +522,7 @@ function DetailPanel({mon,onClose}:{mon:any,onClose:()=>void}){
               </div>
               {canFetch&&availableVersions.length>0&&(
                 <DexSelect value={versionGroup} onChange={(e:any)=>setVersionGroup(e.target.value)} style={{fontSize:11,maxWidth:160}}>
-                  <option value="">Select Generation</option>
+                  <option value="__none__">Select Generation</option>
                   {availableVersions.map(v=>(
                     <option key={v} value={v}>{VERSION_GROUPS[v]?.label||v}</option>
                   ))}
