@@ -890,7 +890,7 @@ export default function App(){
           <div style={{width:22,height:7,borderRadius:4,background:dex.darkRed}}/>
         </div>
       </div>
-      <DetailPanel mon={detail} onClose={()=>setDetail(null)}/>
+      {detail&&<DetailPanel key={detail.id} mon={detail} onClose={()=>setDetail(null)}/>}
     </div>
   );
 }
