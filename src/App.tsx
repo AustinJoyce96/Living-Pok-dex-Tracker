@@ -277,19 +277,19 @@ function PokeballSpinner(){
 
 function CategoryIcon({category}:{category:string}){
   if(category==="physical") return (
-    <svg width={32} height={14} viewBox="0 0 32 14" title="Physical">
+    <svg width={32} height={14} viewBox="0 0 32 14">
       <rect width={32} height={14} rx={3} fill="#C03028"/>
       <text x={16} y={10} textAnchor="middle" fontSize={8} fontFamily="monospace" fill="#fff" fontWeight="bold">PHY</text>
     </svg>
   );
   if(category==="special") return (
-    <svg width={32} height={14} viewBox="0 0 32 14" title="Special">
+    <svg width={32} height={14} viewBox="0 0 32 14">
       <rect width={32} height={14} rx={3} fill="#6890F0"/>
       <text x={16} y={10} textAnchor="middle" fontSize={8} fontFamily="monospace" fill="#fff" fontWeight="bold">SPC</text>
     </svg>
   );
   return (
-    <svg width={32} height={14} viewBox="0 0 32 14" title="Status">
+    <svg width={32} height={14} viewBox="0 0 32 14">
       <rect width={32} height={14} rx={3} fill="#A8A878"/>
       <text x={16} y={10} textAnchor="middle" fontSize={8} fontFamily="monospace" fill="#fff" fontWeight="bold">STS</text>
     </svg>
