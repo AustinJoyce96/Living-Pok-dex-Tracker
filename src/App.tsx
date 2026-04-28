@@ -759,11 +759,11 @@ export default function App(){
                   </>}
                 </div>
                 {viewMode==="grid"?(
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:6}}>
+                  <div onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:6}}>
                     {filtered.map((mon:any)=><GridCard key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox}/>)}
                   </div>
                 ):(
-                  <div style={{border:`1px solid ${dex.screenDim}`,borderRadius:8,overflow:"hidden"}}>
+                  <div onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}} style={{border:`1px solid ${dex.screenDim}`,borderRadius:8,overflow:"hidden"}}>
                     {filtered.map((mon:any)=><ListRow key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox}/>)}
                   </div>
                 )}
