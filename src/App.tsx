@@ -478,6 +478,7 @@ function DetailPanel({mon,onClose}:{mon:any,onClose:()=>void}){
               </div>
               {canFetch&&availableVersions.length>0&&(
                 <DexSelect value={versionGroup} onChange={(e:any)=>setVersionGroup(e.target.value)} style={{fontSize:11,maxWidth:160}}>
+                  <option value="">Select Generation</option>
                   {availableVersions.map(v=>(
                     <option key={v} value={v}>{VERSION_GROUPS[v]?.label||v}</option>
                   ))}
