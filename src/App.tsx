@@ -275,25 +275,68 @@ function PokeballSpinner(){
   );
 }
 
+function CategoryIcon({category}:{category:string}){
+  if(category==="physical") return (
+    <svg width={32} height={14} viewBox="0 0 32 14" title="Physical">
+      <rect width={32} height={14} rx={3} fill="#C03028"/>
+      <text x={16} y={10} textAnchor="middle" fontSize={8} fontFamily="monospace" fill="#fff" fontWeight="bold">PHY</text>
+    </svg>
+  );
+  if(category==="special") return (
+    <svg width={32} height={14} viewBox="0 0 32 14" title="Special">
+      <rect width={32} height={14} rx={3} fill="#6890F0"/>
+      <text x={16} y={10} textAnchor="middle" fontSize={8} fontFamily="monospace" fill="#fff" fontWeight="bold">SPC</text>
+    </svg>
+  );
+  return (
+    <svg width={32} height={14} viewBox="0 0 32 14" title="Status">
+      <rect width={32} height={14} rx={3} fill="#A8A878"/>
+      <text x={16} y={10} textAnchor="middle" fontSize={8} fontFamily="monospace" fill="#fff" fontWeight="bold">STS</text>
+    </svg>
+  );
+}
+
+function StatBar({value,max,color}:{value:number|null,max:number,color:string}){
+  if(value===null||value===undefined) return <span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>—</span>;
+  const pct=Math.min(100,Math.round((value/max)*100));
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:6,minWidth:80}}>
+      <div style={{flex:1,height:5,background:dex.screenDim,borderRadius:3,overflow:"hidden"}}>
+        <div style={{height:"100%",borderRadius:3,width:`${pct}%`,background:color}}/>
+      </div>
+      <span style={{fontSize:11,color:dex.screenText,fontFamily:"monospace",minWidth:24,textAlign:"right"}}>{value}</span>
+    </div>
+  );
+}
+
 function MoveTable({moves}:{moves:any[]}){
   if(!moves.length) return <p style={{color:dex.screenMuted,fontSize:12,fontFamily:"monospace"}}>No moves found for this version.</p>;
   return (
     <div style={{display:"flex",flexDirection:"column",gap:6}}>
       {moves.map((m,i)=>{
         const tc=TYPE_COLORS[m.type]||"#888";
-        const catColor=m.category==="physical"?"#F08030":m.category==="special"?"#6890F0":"#A8A878";
         return (
           <div key={i} style={{background:dex.screenBg,border:`1px solid ${dex.screenDim}`,borderRadius:8,padding:"8px 12px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
-              {m.level!=null&&<span style={{fontSize:11,color:"#ffcc44",fontFamily:"monospace",minWidth:40}}>Lv.{m.level}</span>}
-              {m.tm&&<span style={{fontSize:11,color:"#88aaff",fontFamily:"monospace",minWidth:40}}>{m.tm}</span>}
-              <span style={{fontSize:13,color:dex.screenText,fontFamily:"monospace",fontWeight:500}}>{m.name}</span>
-              <span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:tc+"33",color:tc,fontWeight:500,textTransform:"capitalize"}}>{m.type}</span>
-              <span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:catColor+"33",color:catColor,fontWeight:500,textTransform:"capitalize"}}>{m.category}</span>
-              <span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace",marginLeft:"auto"}}>
-                {m.power?`⚔ ${m.power}`:"—"} &nbsp; {m.accuracy?`🎯 ${m.accuracy}%`:"—"}
-              </span>
+            {/* Row 1: level/tm, name, type, category icon */}
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6,flexWrap:"wrap"}}>
+              {m.level!=null&&<span style={{fontSize:11,color:"#ffcc44",fontFamily:"monospace",minWidth:36}}>Lv.{m.level}</span>}
+              {m.tm&&<span style={{fontSize:11,color:"#88aaff",fontFamily:"monospace",minWidth:36}}>{m.tm}</span>}
+              <span style={{fontSize:13,color:dex.screenText,fontFamily:"monospace",fontWeight:500,flex:1}}>{m.name}</span>
+              <span style={{fontSize:10,padding:"2px 7px",borderRadius:8,background:tc+"33",color:tc,fontWeight:500,textTransform:"capitalize"}}>{m.type}</span>
+              <CategoryIcon category={m.category}/>
             </div>
+            {/* Row 2: power bar, accuracy bar */}
+            <div style={{display:"flex",gap:12,marginBottom:6,flexWrap:"wrap"}}>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:10,color:dex.screenMuted,fontFamily:"monospace",minWidth:28}}>PWR</span>
+                <StatBar value={m.power} max={250} color="#F08030"/>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                <span style={{fontSize:10,color:dex.screenMuted,fontFamily:"monospace",minWidth:28}}>ACC</span>
+                <StatBar value={m.accuracy} max={100} color="#78C850"/>
+              </div>
+            </div>
+            {/* Row 3: description */}
             <p style={{margin:0,fontSize:11,color:dex.screenMuted,fontFamily:"monospace",lineHeight:1.5}}>{m.description}</p>
           </div>
         );
