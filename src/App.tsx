@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, Component } from "react";
 import { ITEM_ACQUISITION, type AcquisitionEntry } from "./itemData";
+import { auth, db, googleProvider, ALLOWED_EMAILS, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, doc, setDoc, getDoc, onSnapshot, collection, getDocs, type User } from "./firebase";
 
 class ErrorBoundary extends Component<{children:any},{error:any}>{
   constructor(props:any){super(props);this.state={error:null};}
@@ -27,6 +28,26 @@ globalStyle.textContent = `
     width: 100%; height: 100dvh; overflow: hidden;
   }
   .dex-screen { flex: 1; overflow-y: auto; min-height: 0; }
+
+  /* Mobile: hide desktop tabs, show pokeball button */
+  .desktop-tabs { display: none !important; }
+  .mobile-tab-btn { display: flex !important; }
+
+  @keyframes ballWobble {
+    0%   { transform: rotate(0deg); }
+    30%  { transform: rotate(-20deg); }
+    60%  { transform: rotate(14deg); }
+    80%  { transform: rotate(-8deg); }
+    100% { transform: rotate(0deg); }
+  }
+  @keyframes ballWobbleClose {
+    0%   { transform: rotate(0deg); }
+    30%  { transform: rotate(20deg); }
+    60%  { transform: rotate(-14deg); }
+    80%  { transform: rotate(8deg); }
+    100% { transform: rotate(0deg); }
+  }
+
   @media (min-width: 600px) {
     html, body, #root { overflow: auto; }
     .dex-viewport { height: auto; padding: 16px; }
@@ -36,6 +57,9 @@ globalStyle.textContent = `
       border-radius: 16px; border: 3px solid #aa0000;
     }
     .dex-screen { flex: 1; overflow-y: auto; min-height: 0; }
+    /* Desktop: show tab bar, hide pokeball button */
+    .desktop-tabs { display: flex !important; }
+    .mobile-tab-btn { display: none !important; }
   }
 `;
 document.head.appendChild(globalStyle);
@@ -418,22 +442,34 @@ function getMultiplier(chart: Partial<Record<TypeName,Partial<Record<TypeName,nu
 }
 
 function cellColor(val: number): string {
-  if (val === 2)   return "#2a5c1a";
-  if (val === 0.5) return "#5c1a1a";
-  if (val === 0)   return "#111";
+  if (val === 4)   return "#7F77DD";
+  if (val === 2)   return "#1D9E75";
+  if (val === 0.5) return "#BA7517";
+  if (val === 0.25)return "#BA7517";
+  if (val === 0)   return "#A32D2D";
   return "transparent";
 }
 function cellTextColor(val: number): string {
-  if (val === 2)   return "#88ee66";
-  if (val === 0.5) return "#ee6666";
-  if (val === 0)   return "#555";
+  if (val === 4)   return "#EEEDFE";
+  if (val === 2)   return "#E1F5EE";
+  if (val === 0.5) return "#FAEEDA";
+  if (val === 0.25)return "#FAEEDA";
+  if (val === 0)   return "#FCEBEB";
   return dex.screenDim;
 }
 function cellLabel(val: number): string {
+  if (val === 4)   return "4×";
   if (val === 2)   return "2×";
   if (val === 0.5) return "½";
-  if (val === 0)   return "0";
+  if (val === 0.25)return "¼";
+  if (val === 0)   return "✕";
   return "·";
+}
+function cellFontSize(val: number): number {
+  if (val === 0)   return 18;
+  if (val === 0.5 || val === 0.25) return 20;
+  if (val === 2 || val === 4) return 15;
+  return 12;
 }
 
 // Generation rule sets for type chart:
@@ -471,7 +507,15 @@ function TypeChart() {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
         <div>
           <p style={{margin:"0 0 2px",fontSize:11,color:dex.screenHeading,fontFamily:"monospace",textTransform:"uppercase",letterSpacing:"0.05em"}}>Type Effectiveness</p>
-          <p style={{margin:0,fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>Rows = attacking type · Columns = defending type · Click a type to highlight</p>
+          <p style={{margin:"0 0 8px",fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>Rows = attacking · Columns = defending · Click a type to highlight</p>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+            {[{val:4,label:"4×"},{val:2,label:"2×"},{val:1,label:"1×"},{val:0.5,label:"½"},{val:0,label:"✕"}].map(({val,label})=>(
+              <div key={val} style={{display:"flex",alignItems:"center",gap:4}}>
+                <div style={{width:20,height:20,borderRadius:3,background:cellColor(val),display:"flex",alignItems:"center",justifyContent:"center",fontSize:val===0.5?12:val===0?11:10,fontWeight:700,color:cellTextColor(val),lineHeight:1}}>{label}</div>
+                <span style={{fontSize:10,color:dex.screenMuted,fontFamily:"monospace"}}>{val===4?"×4 SE":val===2?"×2 SE":val===1?"Neutral":val===0.5?"½×":val===0?"Immune":""}</span>
+              </div>
+            ))}
+          </div>
         </div>
         <DexSelect value={genOpt} onChange={(e:any)=>{setGenOpt(e.target.value);setSelected(null);}} style={{fontSize:11}}>
             {GEN_CHART_OPTIONS.map(o=><option key={o.value} value={o.value}>{o.label}</option>)}
@@ -510,6 +554,7 @@ function TypeChart() {
                 return (
                   <td key={def} onClick={()=>setSelected(selected===def?null:def)}
                     style={{padding:"2px 3px",textAlign:"center",cursor:"pointer",
+                      position:"sticky",top:0,zIndex:1,
                       background:isHighlighted?tc+"22":dex.screen,
                       borderBottom:isHighlighted?`2px solid ${tc}`:`1px solid ${dex.screenDim}`}}>
                     <div style={{
@@ -581,14 +626,15 @@ function TypeChart() {
                         background: highlight ? (TYPE_COLORS[def]||"#888")+"11" : "transparent",
                       }}>
                         <div style={{
-                          width:36,height:30,
+                          width:44,height:44,
                           display:"flex",alignItems:"center",justifyContent:"center",
-                          borderRadius:4,
+                          borderRadius:5,
                           background:cellColor(val),
                           border: highlight && val!==1 ? `1px solid ${cellTextColor(val)}88` : "1px solid transparent",
-                          fontSize:12,
+                          fontSize:cellFontSize(val),
                           color:cellTextColor(val),
-                          fontWeight: val!==1?700:400,
+                          fontWeight:700,
+                          lineHeight:1,
                         }}>
                           {cellLabel(val)}
                         </div>
@@ -659,12 +705,12 @@ function TypeChart() {
 
 // ─── Team Builder ─────────────────────────────────────────────────────────────
 
-const EMPTY_SLOT = {pokemon:null as any, moves:["","","",""], moveTypes:["","","",""] as string[], item:"", learnableMoves:[] as string[], abilities:[] as {name:string,hidden:boolean}[], selectedAbility:""};
-type TeamSlot = {pokemon:any, moves:string[], moveTypes:string[], item:string, learnableMoves:string[], abilities:{name:string,hidden:boolean}[], selectedAbility:string};
+const EMPTY_SLOT = {pokemon:null as any, moves:["","","",""], moveTypes:["","","",""] as string[], moveCategories:["","","",""] as string[], item:"", learnableMoves:[] as string[], abilities:[] as {name:string,hidden:boolean}[], selectedAbility:""};
+type TeamSlot = {pokemon:any, moves:string[], moveTypes:string[], moveCategories:string[], item:string, learnableMoves:string[], abilities:{name:string,hidden:boolean}[], selectedAbility:string};
 type Team = {name:string, slots:TeamSlot[]};
 
 function newTeam(name:string):Team{
-  return {name, slots:Array(6).fill(null).map(()=>({...EMPTY_SLOT,moves:["","","",""],moveTypes:["","","",""],learnableMoves:[],abilities:[],selectedAbility:""}))};
+  return {name, slots:Array(6).fill(null).map(()=>({...EMPTY_SLOT,moves:["","","",""],moveTypes:["","","",""],moveCategories:["","","",""],learnableMoves:[],abilities:[],selectedAbility:""}))};
 }
 
 // Type effectiveness using Gen 6+ chart
@@ -809,7 +855,7 @@ function PokemonSearch({value,onChange}:{value:any,onChange:(v:any)=>void}){
   );
 }
 
-function MoveSearch({value,onChange,placeholder,learnableMoves}:{value:string,onChange:(name:string,type:string)=>void,placeholder:string,learnableMoves?:string[]}){
+function MoveSearch({value,onChange,placeholder,learnableMoves}:{value:string,onChange:(name:string,type:string,category:string)=>void,placeholder:string,learnableMoves?:string[]}){
   const [query,setQuery]=useState(value);
   const [results,setResults]=useState<any[]>([]);
   const [loading,setLoading]=useState(false);
@@ -854,7 +900,7 @@ function MoveSearch({value,onChange,placeholder,learnableMoves}:{value:string,on
   return (
     <div style={{position:"relative"}}>
       <DexInput value={query}
-        onChange={(e:any)=>{setQuery(e.target.value);setOpen(true);if(!e.target.value)onChange("","");}}
+        onChange={(e:any)=>{setQuery(e.target.value);setOpen(true);if(!e.target.value)onChange("","","");}}
         onKeyDown={(e:any)=>{if(e.key==="Escape"){setOpen(false);setQuery(value);}}}
         placeholder={placeholder} style={{fontSize:10}}/>
       {open&&query.length>=2&&(
@@ -871,7 +917,7 @@ function MoveSearch({value,onChange,placeholder,learnableMoves}:{value:string,on
             const catLabel=r.category==="physical"?"PHY":r.category==="special"?"SPC":"STS";
             const catColor=r.category==="physical"?"#C03028":r.category==="special"?"#6890F0":"#A8A878";
             return (
-              <div key={i} onClick={()=>{onChange(r.name,r.type);setQuery(r.name);setOpen(false);}}
+              <div key={i} onClick={()=>{onChange(r.name,r.type,r.category);setQuery(r.name);setOpen(false);}}
                 style={{display:"flex",alignItems:"center",gap:6,padding:"6px 10px",cursor:"pointer",borderBottom:i<results.length-1?`1px solid ${dex.screenDim}22`:"none"}}
                 onMouseEnter={e=>(e.currentTarget as HTMLElement).style.background=dex.screenBg}
                 onMouseLeave={e=>(e.currentTarget as HTMLElement).style.background="transparent"}>
@@ -892,8 +938,8 @@ function TeamSlotCard({slot,index,onUpdate,evalMode,versionGroup}:{slot:TeamSlot
   const [fetchingTypes,setFetchingTypes]=useState(false);
 
   const handlePokemonSelect=async(p:any)=>{
-    if(!p){onUpdate({...slot,pokemon:null,moves:["","","",""],moveTypes:["","","",""],item:"",learnableMoves:[],abilities:[],selectedAbility:""});return;}
-    onUpdate({...slot,pokemon:{...p,types:[]},moves:["","","",""],moveTypes:["","","",""],learnableMoves:[],abilities:[],selectedAbility:"",item:""});
+    if(!p){onUpdate({...slot,pokemon:null,moves:["","","",""],moveTypes:["","","",""],moveCategories:["","","",""],item:"",learnableMoves:[],abilities:[],selectedAbility:""});return;}
+    onUpdate({...slot,pokemon:{...p,types:[]},moves:["","","",""],moveTypes:["","","",""],moveCategories:["","","",""],learnableMoves:[],abilities:[],selectedAbility:"",item:""});
     setFetchingTypes(true);
     try{
       const data=await fetchPoke(`https://pokeapi.co/api/v2/pokemon/${p.id}`);
@@ -913,7 +959,7 @@ function TeamSlotCard({slot,index,onUpdate,evalMode,versionGroup}:{slot:TeamSlot
         hidden:a.is_hidden,
       }));
       const selectedAbility=abilities.find(a=>!a.hidden)?.name||abilities[0]?.name||"";
-      onUpdate({...slot,pokemon:{...p,types},moves:["","","",""],moveTypes:["","","",""],learnableMoves,abilities,selectedAbility,item:""});
+      onUpdate({...slot,pokemon:{...p,types},moves:["","","",""],moveTypes:["","","",""],moveCategories:["","","",""],learnableMoves,abilities,selectedAbility,item:""});
     }catch(e){console.error(e);}
     setFetchingTypes(false);
   };
@@ -943,8 +989,8 @@ function TeamSlotCard({slot,index,onUpdate,evalMode,versionGroup}:{slot:TeamSlot
             style={{background:"none",border:"none",color:dex.screenMuted,fontSize:16,cursor:"pointer",padding:0,lineHeight:1,flexShrink:0}}>✕</button>
         )}
       </div>
-      {/* Ability selector */}
-      {slot.abilities?.length>0&&(
+      {/* Ability selector — advanced mode only */}
+      {!evalMode&&slot.abilities?.length>0&&(
         <DexSelect value={slot.selectedAbility} onChange={(e:any)=>onUpdate({...slot,selectedAbility:e.target.value})} style={{fontSize:11}}>
           {slot.abilities.map((a,i)=>(
             <option key={i} value={a.name}>{a.name}{a.hidden?" (Hidden)":""}</option>
@@ -958,12 +1004,14 @@ function TeamSlotCard({slot,index,onUpdate,evalMode,versionGroup}:{slot:TeamSlot
             {slot.moves.map((m,i)=>(
               <MoveSearch key={i} value={m}
                 learnableMoves={slot.learnableMoves}
-                onChange={(name,type)=>{
+                onChange={(name,type,category)=>{
                   const moves=[...slot.moves];
                   const moveTypes=[...(slot.moveTypes||["","","",""])];
+                  const moveCategories=[...(slot.moveCategories||["","","",""])];
                   moves[i]=name;
                   moveTypes[i]=type;
-                  onUpdate({...slot,moves,moveTypes});
+                  moveCategories[i]=category||"";
+                  onUpdate({...slot,moves,moveTypes,moveCategories});
                 }}
                 placeholder={`Move ${i+1}`}/>
             ))}
@@ -990,17 +1038,19 @@ function TeamAnalysis({slots,basicMode}:{slots:TeamSlot[],basicMode:boolean}){
   };
 
   // ATTACKING: best multiplier this slot can deal to [defType]
-  // In advanced mode: use actual move types if available, fall back to pokemon types
-  // In basic mode: use pokemon types only
+  // Returns 0 (immune) only if ALL available attack types are blocked
+  // Status moves don't deal damage so are excluded from coverage
   const getAtkMult=(slot:TeamSlot, defType:string):number=>{
     if(!slot.pokemon?.types?.length)return 1;
     const pokemonTypeMults=slot.pokemon.types.map((atkType:string)=>chart[atkType]?.[defType]??1);
     if(!basicMode&&slot.moveTypes?.some((t:string)=>t)){
-      // Use move types for any filled move slots
+      // Only include damaging moves (physical/special), exclude status
       const moveMults=slot.moveTypes
-        .filter((t:string)=>t)
-        .map((t:string)=>chart[t]?.[defType]??1);
-      return Math.max(...pokemonTypeMults,...moveMults);
+        .map((t:string,i:number)=>({type:t,cat:(slot.moveCategories||[])[i]||""}))
+        .filter(({type,cat})=>type&&cat!=="status")
+        .map(({type})=>chart[type]?.[defType]??1);
+      const allMults=moveMults.length>0?[...pokemonTypeMults,...moveMults]:pokemonTypeMults;
+      return Math.max(...allMults);
     }
     return Math.max(...pokemonTypeMults);
   };
@@ -1008,12 +1058,12 @@ function TeamAnalysis({slots,basicMode}:{slots:TeamSlot[],basicMode:boolean}){
   const slotHitsSE=(slot:TeamSlot, defType:string):boolean=>getAtkMult(slot,defType)>=2;
 
   const multColor=(mult:number)=>{
-    if(mult===0)   return{bg:"#111111",text:"#444444",label:"0"};
-    if(mult===0.25)return{bg:"#1a0a0a",text:"#aa4444",label:"¼"};
-    if(mult===0.5) return{bg:"#2a1010",text:"#cc6666",label:"½"};
-    if(mult===2)   return{bg:"#0a2a0a",text:"#66cc66",label:"2×"};
-    if(mult===4)   return{bg:"#0a3a0a",text:"#88ee88",label:"4×"};
-    return{bg:"transparent",text:dex.screenDim,label:"·"};
+    if(mult===0)    return{bg:"#A32D2D",text:"#FCEBEB",label:"✕",  fs:18};
+    if(mult===0.25) return{bg:"#BA7517",text:"#FAEEDA",label:"¼",  fs:20};
+    if(mult===0.5)  return{bg:"#BA7517",text:"#FAEEDA",label:"½",  fs:20};
+    if(mult===2)    return{bg:"#1D9E75",text:"#E1F5EE",label:"2×", fs:15};
+    if(mult===4)    return{bg:"#7F77DD",text:"#EEEDFE",label:"4×", fs:15};
+    return{bg:"transparent",text:dex.screenDim,label:"·",fs:12};
   };
 
   const isDefending=perspective==="defending";
@@ -1087,7 +1137,7 @@ function TeamAnalysis({slots,basicMode}:{slots:TeamSlot[],basicMode:boolean}){
                     return (
                       <td key={si} style={{padding:"3px 4px",textAlign:"center",borderBottom:`1px solid ${dex.screenDim}22`}}>
                         {mult!==null?(
-                          <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:36,height:22,borderRadius:4,background:mc.bg,fontSize:10,fontWeight:600,color:mc.text,fontFamily:"monospace"}}>
+                          <div style={{display:"inline-flex",alignItems:"center",justifyContent:"center",width:44,height:44,borderRadius:5,background:mc.bg,fontSize:mc.fs,fontWeight:700,color:mc.text,fontFamily:"monospace",lineHeight:1}}>
                             {mc.label}
                           </div>
                         ):(
@@ -1137,17 +1187,51 @@ function TeamBuilder({username}:{username:string}){
   const basicMode=evalMode;
   const storageKey=`teams:${username.toLowerCase()}`;
 
-  // Load teams from localStorage directly (never shared win.storage — teams are device-local)
+  // Load teams from localStorage
   useEffect(()=>{
     try{
       const v=localStorage.getItem(storageKey);
-      if(v){const t=JSON.parse(v);setTeams(t);setActiveTeamIdx(0);}
-      else{setTeams([newTeam("My Team")]);}
+      if(v){
+        const t=JSON.parse(v);
+        const migrated=t.map((team:any)=>({
+          ...team,
+          slots:team.slots.map((s:any)=>({
+            ...s,
+            learnableMoves:[],
+            moveCategories:s.moveCategories||["","","",""],
+          }))
+        }));
+        setTeams(migrated);
+        setActiveTeamIdx(0);
+      } else {
+        setTeams([newTeam("My Team")]);
+      }
     }catch{setTeams([newTeam("My Team")]);}
   },[storageKey]);
 
   const saveTeams=(updated:Team[])=>{
-    try{localStorage.setItem(storageKey,JSON.stringify(updated));}catch{}
+    // Strip learnableMoves before saving — they're large and re-fetched on pokemon select
+    const stripped=updated.map(team=>({
+      ...team,
+      slots:team.slots.map(slot=>({
+        ...slot,
+        learnableMoves:[],
+      }))
+    }));
+    try{
+      localStorage.setItem(storageKey,JSON.stringify(stripped));
+    }catch(e){
+      // localStorage full — clear oldest PokéAPI cache entries and retry
+      try{
+        const cacheKeys=Object.keys(localStorage).filter(k=>k.startsWith("poke_cache:"));
+        // Remove half the cache entries
+        cacheKeys.slice(0,Math.ceil(cacheKeys.length/2)).forEach(k=>localStorage.removeItem(k));
+        localStorage.setItem(storageKey,JSON.stringify(stripped));
+        console.log("Saved teams after clearing cache");
+      }catch(e2){
+        console.error("saveTeams failed even after cache clear:",e2);
+      }
+    }
   };
 
   const updateSlot=(teamIdx:number,slotIdx:number,slot:TeamSlot)=>{
@@ -1477,9 +1561,13 @@ function DexLights(){
 
 function DexInput({value,onChange,onKeyDown=()=>{},placeholder,style={}}:{value:any,onChange:any,onKeyDown?:any,placeholder:any,style?:any}){
   return (
-    <input value={value} onChange={onChange} onKeyDown={onKeyDown} placeholder={placeholder}
-      style={{background:dex.screenBg,border:`1px solid ${dex.screenDim}`,borderRadius:6,color:dex.screenText,padding:"6px 10px",fontSize:12,fontFamily:"monospace",outline:"none",width:"100%",boxSizing:"border-box",...style}}
-    />
+    <div style={{position:"relative",display:"flex",alignItems:"center",width:"100%"}}>
+      <input value={value} onChange={onChange} onKeyDown={onKeyDown} placeholder={placeholder}
+        style={{background:dex.screenBg,border:`1px solid ${dex.screenDim}`,borderRadius:6,color:dex.screenText,padding:"6px 28px 6px 10px",fontSize:12,fontFamily:"monospace",outline:"none",width:"100%",boxSizing:"border-box",...style}}
+      />
+      {value&&<button onClick={()=>onChange({target:{value:""}})}
+        style={{position:"absolute",right:6,background:"none",border:"none",color:dex.screenMuted,fontSize:14,cursor:"pointer",padding:0,lineHeight:1,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>}
+    </div>
   );
 }
 
@@ -1520,8 +1608,8 @@ function GridCard({mon,caught,selected,selectMode,isAnchor,onToggle,onDetail,onC
       <span style={{fontSize:10,color:isAnchor?"#ffcc44":selected?"#8899ff":dex.screenHeading,alignSelf:"flex-start",paddingLeft:isAnchor?16:4,fontFamily:"monospace"}}>#{String(mon.id).padStart(3,"0")}</span>
       <img src={spriteUrl(mon.id)} alt={mon.name} width={48} height={48} style={{imageRendering:"pixelated",filter:caught?"none":"grayscale(100%)",pointerEvents:"none"}} onError={e=>{(e.target as HTMLImageElement).style.opacity="0.1";}}/>
       <span style={{fontSize:11,color:dex.screenText,textAlign:"center",lineHeight:1.2,width:"100%",padding:"0 3px",wordBreak:"break-word",fontFamily:"monospace",pointerEvents:"none"}}>{mon.name}</span>
-      <div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center"}}>{types.map((t:string)=><TypeBadge key={t} type={t}/>)}</div>
-      <div onClick={e=>{e.stopPropagation();onToggle(mon.id);}} style={{marginTop:4}}><Pokeball caught={caught} size={26}/></div>
+      <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",gap:2,flexWrap:"wrap",minHeight:20}}>{types.map((t:string)=><TypeBadge key={t} type={t}/>)}</div>
+      <div onClick={e=>{e.stopPropagation();onToggle(mon.id);}} style={{marginTop:4,flexShrink:0}}><Pokeball caught={caught} size={26}/></div>
     </div>
   );
 }
@@ -1568,7 +1656,7 @@ function DetailPanel({mon,onClose,onTypesLoaded}:{mon:any,onClose:()=>void,onTyp
       setLoading(true);
       setEncLoading(true);
       setLiveTypes([]);
-      setEncounters({});
+      setEncounters([]);
       setAvailableVersions([]);
       setVersionGroup("__none__");
       try{
@@ -1821,15 +1909,19 @@ function DetailPanel({mon,onClose,onTypesLoaded}:{mon:any,onClose:()=>void,onTyp
 }
 
 function AppInner(){
-  const [username,setUsername]=useState("");
-  const [inputName,setInputName]=useState("");
+  // ── Firebase auth state ──────────────────────────────────────────────────
+  const [firebaseUser,setFirebaseUser]=useState<User|null>(null);
+  const [authLoading,setAuthLoading]=useState(true);
+  const [unauthorized,setUnauthorized]=useState(false);
+
+  // ── App state ────────────────────────────────────────────────────────────
   const [caught,setCaught]=useState<{[key:string]:boolean}>({});
   const [filter,setFilter]=useState("all");
   const [search,setSearch]=useState("");
   const [genVisible,setGenVisible]=useState(true);
   const [detail,setDetail]=useState<any>(null);
   const [saving,setSaving]=useState(false);
-  const [friends,setFriends]=useState<{name:string,count:number}[]>([]);
+  const [friends,setFriends]=useState<{name:string,count:number,uid:string}[]>([]);
   const [tab,setTab]=useState("home");
   const [quickEntry,setQuickEntry]=useState("");
   const [quickFeedback,setQuickFeedback]=useState("");
@@ -1838,17 +1930,24 @@ function AppInner(){
   const [selectMode,setSelectMode]=useState(false);
   const [lastClicked,setLastClicked]=useState<number|null>(null);
   const [rangeAnchor,setRangeAnchor]=useState<number|null>(null);
-  const [savedProfiles,setSavedProfiles]=useState<{name:string,count:number}[]>([]);
+  const [tabMenuOpen,setTabMenuOpen]=useState(false);
+  const [tabMenuClosing,setTabMenuClosing]=useState(false);
+  const [ballDragX,setBallDragX]=useState(0);
+  const ballDragRef=useRef<{startX:number,startTime:number}|null>(null);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [confirmDelete,setConfirmDelete]=useState<string|null>(null);
-  // Generation filter — set of gen numbers currently visible. Defaults to all available gens.
   const [genFilter,setGenFilter]=useState<Set<number>>(()=>new Set(GENERATIONS.map(g=>g.num)));
+  const [typeFilter,setTypeFilter]=useState("all");
   const [waffleOpen,setWaffleOpen]=useState(false);
-  // Types loaded on-demand from PokéAPI when a detail panel is opened; keyed by Pokémon ID
   const [pokemonTypes,setPokemonTypes]=useState<{[id:number]:string[]}>({});
   const [cacheSize,setCacheSize]=useState(0);
+  const unsubCaughtRef=useRef<(()=>void)|null>(null);
 
-  // Count cached PokéAPI entries in localStorage — must be defined before handleTypesLoaded
+  // Derived from Firebase user
+  const username=firebaseUser?.displayName||firebaseUser?.email||"";
+  const uid=firebaseUser?.uid||"";
+
+  // ── Cache helpers ─────────────────────────────────────────────────────────
   const refreshCacheSize=useCallback(()=>{
     try{
       const count=Object.keys(localStorage).filter(k=>k.startsWith(CACHE_PREFIX)).length;
@@ -1863,70 +1962,135 @@ function AppInner(){
 
   useEffect(()=>{refreshCacheSize();},[refreshCacheSize]);
 
+  const closeMenu=()=>{
+    setTabMenuClosing(true);
+    setTabMenuOpen(false);
+    setTimeout(()=>setTabMenuClosing(false),400);
+  };
+
   const handleClearCache=()=>{
     clearPokeCache();
     setPokemonTypes({});
     refreshCacheSize();
   };
 
-  const loadUser=useCallback(async(name:string)=>{
-    try{const v=await getItem(`dex:${name.toLowerCase()}`);setCaught(v?JSON.parse(v):{});}
-    catch{setCaught({});}
+  // ── Firebase auth listener ────────────────────────────────────────────────
+  useEffect(()=>{
+    const unsub=onAuthStateChanged(auth,async(user)=>{
+      if(user){
+        const email=user.email||"";
+        if(!ALLOWED_EMAILS.has(email)){
+          // Not on the whitelist — sign them out immediately
+          await signOut(auth);
+          setFirebaseUser(null);
+          setUnauthorized(true);
+          setAuthLoading(false);
+          return;
+        }
+        setUnauthorized(false);
+      }
+      setFirebaseUser(user);
+      setAuthLoading(false);
+      if(!user){
+        setCaught({});
+        setFriends([]);
+        if(unsubCaughtRef.current){unsubCaughtRef.current();unsubCaughtRef.current=null;}
+      }
+    });
+    // Also handle redirect result — this resolves after Google redirects back
+    getRedirectResult(auth).then(result=>{
+      if(result?.user){
+        setFirebaseUser(result.user);
+        setAuthLoading(false);
+      }
+    }).catch(console.error);
+    return()=>unsub();
   },[]);
 
-  const saveUser=useCallback(async(name:string,data:any)=>{
-    try{setSaving(true);await setItem(`dex:${name.toLowerCase()}`,JSON.stringify(data));}
-    catch(e){console.error(e);}finally{setSaving(false);}
-  },[]);
+  // ── Real-time caught sync from Firestore ──────────────────────────────────
+  useEffect(()=>{
+    if(unsubCaughtRef.current){unsubCaughtRef.current();unsubCaughtRef.current=null;}
+    if(!uid)return;
+    const docRef=doc(db,"users",uid);
+    const unsub=onSnapshot(docRef,(snap)=>{
+      if(snap.exists()){
+        const data=snap.data();
+        setCaught(data.caught||{});
+      } else {
+        // First time user — create their doc
+        setDoc(docRef,{
+          displayName:firebaseUser?.displayName||"",
+          email:firebaseUser?.email||"",
+          caught:{},
+          updatedAt:Date.now(),
+        });
+      }
+    });
+    unsubCaughtRef.current=unsub;
+    return()=>unsub();
+  },[uid]);
 
-  // Display name helpers — store original casing in localStorage separate from caught data
-  const getDisplayName=(lower:string):string=>{
-    try{return localStorage.getItem(`dex:display:${lower}`)||lower;}catch{return lower;}
-  };
-  const saveDisplayName=(lower:string,display:string)=>{
-    try{localStorage.setItem(`dex:display:${lower}`,display);}catch{}
-  };
-  const removeDisplayName=(lower:string)=>{
-    try{localStorage.removeItem(`dex:display:${lower}`);}catch{}
-  };
-
-  const loadProfiles=useCallback(async()=>{
+  // ── Save caught to Firestore ──────────────────────────────────────────────
+  const saveUser=useCallback(async(data:{[key:string]:boolean})=>{
+    if(!uid)return;
     try{
-      const reserved=new Set(["dex:last-user"]);
-      const keys=(await listKeys("dex:")).filter(k=>!reserved.has(k)&&!k.startsWith("dex:display:"));
-      if(!keys.length){setSavedProfiles([]);return;}
-      const entries=await Promise.all(keys.map(async(k:string)=>{
-        try{
-          const lower=k.replace("dex:","");
-          if(!lower)return null;
-          const v=await getItem(k);
-          const d=v?JSON.parse(v):{};
-          const display=getDisplayName(lower)||lower;
-          if(!display)return null;
-          return{name:display,lower,count:Object.values(d).filter(Boolean).length};
-        }catch{return null;}
-      }));
-      setSavedProfiles((entries.filter((e):e is {name:string,lower:string,count:number}=>!!e&&!!e.name)).sort((a,b)=>b.count-a.count));
+      setSaving(true);
+      await setDoc(doc(db,"users",uid),{
+        displayName:firebaseUser?.displayName||"",
+        email:firebaseUser?.email||"",
+        caught:data,
+        updatedAt:Date.now(),
+      },{merge:true});
     }catch(e){console.error(e);}
-  },[]);
+    finally{setSaving(false);}
+  },[uid,firebaseUser]);
 
+  // ── Load friends from Firestore ───────────────────────────────────────────
   const loadFriends=useCallback(async()=>{
     try{
-      const reserved=new Set(["dex:last-user"]);
-      const keys=(await listKeys("dex:")).filter(k=>!reserved.has(k)&&!k.startsWith("dex:display:"));
-      const entries=await Promise.all(keys.map(async(k:string)=>{
-        try{
-          const lower=k.replace("dex:","");
-          const v=await getItem(k);
-          const d=v?JSON.parse(v):{};
-          const display=getDisplayName(lower);
-          return{name:display,lower,count:Object.values(d).filter(Boolean).length};
-        }catch{return null;}
-      }));
-      setFriends((entries.filter(Boolean) as {name:string,lower:string,count:number}[]).sort((a,b)=>b.count-a.count));
+      const snap=await getDocs(collection(db,"users"));
+      const entries=snap.docs
+        .filter(d=>d.id!==uid&&ALLOWED_EMAILS.has(d.data().email||""))
+        .map(d=>{
+          const data=d.data();
+          return{
+            uid:d.id,
+            name:data.displayName||data.email||"Unknown",
+            count:Object.values(data.caught||{}).filter(Boolean).length,
+          };
+        })
+        .sort((a,b)=>b.count-a.count);
+      setFriends(entries);
     }catch(e){console.error(e);}
-  },[]);
+  },[uid]);
 
+  // ── Sign in / out ─────────────────────────────────────────────────────────
+  const handleLogin=async()=>{
+    try{
+      const {signInWithPopup}=await import("firebase/auth");
+      await signInWithPopup(auth,googleProvider);
+    }catch(e:any){
+      // If popup blocked, fall back to redirect
+      if(e.code==="auth/popup-blocked"||e.code==="auth/cancelled-popup-request"){
+        await signInWithRedirect(auth,googleProvider);
+      } else {
+        console.error(e);
+      }
+    }
+  };
+
+  const handleLogout=async()=>{
+    setTab("home");
+    setSelectMode(false);
+    setSelected(new Set());
+    setDetail(null);
+    setSearch("");
+    setFilter("all");
+    setConfirmDelete(null);
+    await signOut(auth);
+  };
+
+  // ── Effects ───────────────────────────────────────────────────────────────
   useEffect(()=>{
     if(!settingsOpen)return;
     let skipFirst=true;
@@ -1943,17 +2107,6 @@ function AppInner(){
     return()=>window.removeEventListener("click",handler);
   },[waffleOpen]);
 
-  useEffect(()=>{
-    loadProfiles();
-    try{
-      const lower=localStorage.getItem("dex:last-user");
-      if(lower){
-        const display=getDisplayName(lower);
-        setUsername(display);
-        loadUser(lower);
-      }
-    }catch{}
-  },[loadProfiles]);
   useEffect(()=>{if(tab==="friends")loadFriends();},[tab,loadFriends]);
 
   useEffect(()=>{
@@ -1965,49 +2118,10 @@ function AppInner(){
     return()=>window.removeEventListener("keydown",handler);
   },[]);
 
-  const handleLogin=(name?:string)=>{
-    const raw=(name||inputName).trim();
-    if(!raw)return;
-    const lower=raw.toLowerCase();
-    saveDisplayName(lower,raw);
-    setUsername(raw);
-    loadUser(lower);
-    try{localStorage.setItem("dex:last-user",lower);}catch{}
-  };
-
-  const handleLogout=()=>{
-    setUsername("");
-    setInputName("");
-    setCaught({});
-    setTab("home");
-    setSelectMode(false);
-    setSelected(new Set());
-    setDetail(null);
-    setSearch("");
-    setFilter("all");
-    setConfirmDelete(null);
-    loadProfiles();
-    try{localStorage.removeItem("dex:last-user");}catch{}
-  };
-
-  const handleDeleteProfile=async(name:string,lower:string)=>{
-    try{
-      try{localStorage.removeItem(`dex:${lower}`);}catch{}
-      if((window as any).storage){
-        try{await (window as any).storage.delete(`dex:${lower}`,true);}catch{}
-      }
-      removeDisplayName(lower);
-      const lastUser=localStorage.getItem("dex:last-user");
-      if(lastUser===lower) try{localStorage.removeItem("dex:last-user");}catch{}
-    }catch(e){console.error(e);}
-    setConfirmDelete(null);
-    loadProfiles();
-  };
-
   const toggleCaught=(id:number)=>{
     const next={...caught,[id]:!caught[id]};
     setCaught(next);
-    if(username)saveUser(username,next);
+    if(uid)saveUser(next);
   };
 
   const handleCardClick=(mon:any,e:React.MouseEvent,openDetail:()=>void)=>{
@@ -2034,10 +2148,17 @@ function AppInner(){
   };
 
   const handleLongPress=(mon:any)=>{
-    if(!selectMode)return;
-    setRangeAnchor(mon.id);
-    setSelected(prev=>{const next=new Set(prev);next.add(mon.id);return next;});
-    setLastClicked(mon.id);
+    if(!selectMode){
+      // Enter select mode and select this pokemon
+      setSelectMode(true);
+      setSelected(new Set([mon.id]));
+      setLastClicked(mon.id);
+      setRangeAnchor(null);
+    } else {
+      setRangeAnchor(mon.id);
+      setSelected(prev=>{const next=new Set(prev);next.add(mon.id);return next;});
+      setLastClicked(mon.id);
+    }
   };
 
   const toggleCheckbox=(id:number,e:React.ChangeEvent)=>{
@@ -2052,7 +2173,7 @@ function AppInner(){
     const next:{[key:string]:boolean}={...caught};
     selected.forEach((id:any)=>{next[id]=markAs;});
     setCaught(next);
-    if(username)saveUser(username,next);
+    if(uid)saveUser(next);
     exitSelectMode();
   };
 
@@ -2066,91 +2187,143 @@ function AppInner(){
   };
 
   // Defer rendering full list — show first 50 instantly, rest after paint
-  const [renderLimit,setRenderLimit]=useState(50);
+  const PAGE=30;
+  const [renderLimit,setRenderLimit]=useState(PAGE);
+  const scrollRef=useRef<HTMLDivElement>(null);
+
+  // Reset render limit when filters change
   useEffect(()=>{
-    if(tab!=="tracker"){setRenderLimit(50);return;}
-    const id=setTimeout(()=>setRenderLimit(Infinity),50);
-    return()=>clearTimeout(id);
-  },[tab,genFilter,search,filter]);
+    setRenderLimit(PAGE);
+  },[tab,genFilter,search,filter,typeFilter]);
+
+  // Load more when user scrolls near bottom
+  useEffect(()=>{
+    const el=scrollRef.current;
+    if(!el)return;
+    const onScroll=()=>{
+      if(el.scrollTop+el.clientHeight>el.scrollHeight-200){
+        setRenderLimit(prev=>prev+PAGE);
+      }
+    };
+    el.addEventListener("scroll",onScroll,{passive:true});
+    return()=>el.removeEventListener("scroll",onScroll);
+  },[tab]);
   const visiblePokemon=allPokemon.filter(p=>genFilter.has(p.gen));
   const total=visiblePokemon.length;
   const caughtCount=visiblePokemon.filter(p=>caught[p.id]).length;
+
+  // Pre-load types for visible pokemon in batches, one state update per batch
+  useEffect(()=>{
+    if(tab!=="tracker")return;
+    const missing=visiblePokemon.filter(p=>!pokemonTypes[p.id]);
+    if(!missing.length)return;
+    let cancelled=false;
+    const runBatches=async()=>{
+      for(let i=0;i<missing.length;i+=30){
+        if(cancelled)break;
+        const batch=missing.slice(i,i+30);
+        const results=await Promise.all(batch.map(async p=>{
+          try{
+            const d=await fetchPoke(`https://pokeapi.co/api/v2/pokemon/${p.id}`);
+            return{id:p.id,types:d.types.map((t:any)=>t.type.name)};
+          }catch{return null;}
+        }));
+        if(cancelled)break;
+        // Single state update for the whole batch
+        const updates=results.filter(Boolean) as {id:number,types:string[]}[];
+        if(updates.length){
+          setPokemonTypes(prev=>{
+            const next={...prev};
+            let changed=false;
+            updates.forEach(({id,types})=>{if(!next[id]){next[id]=types;changed=true;}});
+            return changed?next:prev;
+          });
+        }
+        if(i+30<missing.length) await new Promise(r=>setTimeout(r,100));
+      }
+    };
+    runBatches();
+    return()=>{cancelled=true;};
+  },[tab]);
+
   const filtered=visiblePokemon.filter(p=>{
+    const types=pokemonTypes[p.id]||p.types||[];
     const ms=!search||p.name.toLowerCase().includes(search.toLowerCase())||String(p.id).includes(search);
     const mf=filter==="all"||(filter==="caught"&&caught[p.id])||(filter==="missing"&&!caught[p.id]);
-    return ms&&mf;
+    const mt=typeFilter==="all"||types.includes(typeFilter);
+    return ms&&mf&&mt;
   }).map(p=>({...p,types:pokemonTypes[p.id]||p.types}));
   const renderedList=filtered.slice(0,renderLimit);
 
   const screenStyle={background:dex.screen,borderRadius:8,border:`3px solid ${dex.screenBorder}`,padding:14};
 
-  if(!username) return (
+  // Loading state while Firebase checks auth
+  if(authLoading) return (
     <div className="dex-viewport">
     <div className="dex-shell">
       <div style={{background:dex.red,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
         <DexLights/>
         <span style={{color:"#fff",fontWeight:500,fontSize:14,fontFamily:"monospace",marginLeft:8}}>POKÉDEX — Living Dex Tracker</span>
       </div>
-      <div className="dex-screen" style={{...screenStyle,margin:"0 12px",display:"flex",flexDirection:"column",gap:16}}>
-        {savedProfiles.length>0&&(
-          <div>
-            <p style={{color:dex.screenHeading,fontSize:11,fontFamily:"monospace",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>Saved trainers</p>
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              {savedProfiles.map((p,i)=>{
-                const pct=Math.round((p.count/allPokemon.length)*100);
-                const lower=(p as any).lower||p.name.toLowerCase();
-                const isConfirmingDelete=confirmDelete===lower;
-                return (
-                  <div key={i} style={{background:dex.screenBg,borderRadius:8,border:`1px solid ${dex.screenDim}`,overflow:"hidden"}}>
-                    {!isConfirmingDelete&&(
-                      <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px"}}>
-                        <div onClick={()=>handleLogin(p.name)} style={{width:38,height:38,borderRadius:"50%",background:"#1a2a3a",border:`2px solid ${dex.screenDim}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,fontFamily:"monospace",color:dex.screenText,fontWeight:500,flexShrink:0,cursor:"pointer"}}>
-                          {p.name[0].toUpperCase()}
-                        </div>
-                        <div onClick={()=>handleLogin(p.name)} style={{flex:1,minWidth:0,cursor:"pointer"}}>
-                          <p style={{margin:"0 0 4px",fontSize:13,fontFamily:"monospace",color:dex.screenText,fontWeight:500}}>{p.name}</p>
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <div style={{flex:1,height:4,background:dex.screenDim,borderRadius:2,overflow:"hidden"}}>
-                              <div style={{height:"100%",borderRadius:2,width:`${pct}%`,background:p.count===allPokemon.length?"#55cc55":"#378ADD"}}/>
-                            </div>
-                            <span style={{fontSize:10,color:dex.screenMuted,fontFamily:"monospace",whiteSpace:"nowrap"}}>{p.count}/{allPokemon.length} · {pct}%</span>
-                          </div>
-                        </div>
-                        <span onClick={()=>handleLogin(p.name)} style={{fontSize:11,color:"#5588ff",fontFamily:"monospace",flexShrink:0,cursor:"pointer"}}>▶ Play</span>
-                        <button onClick={e=>{e.stopPropagation();setConfirmDelete(lower);}}
-                          style={{background:"none",border:"1px solid #553333",borderRadius:5,color:"#ee6666",fontSize:11,padding:"3px 8px",cursor:"pointer",fontFamily:"monospace",flexShrink:0}}>
-                          ✕
-                        </button>
-                      </div>
-                    )}
-                    {isConfirmingDelete&&(
-                      <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px"}}>
-                        <span style={{flex:1,fontSize:11,color:"#ee6666",fontFamily:"monospace"}}>Delete {p.name}? This cannot be undone.</span>
-                        <button onClick={()=>handleDeleteProfile(p.name,lower)}
-                          style={{background:"#3a0808",border:"1px solid #cc2222",borderRadius:5,color:"#ff6666",fontSize:10,padding:"4px 10px",cursor:"pointer",fontFamily:"monospace"}}>
-                          Delete
-                        </button>
-                        <button onClick={()=>setConfirmDelete(null)}
-                          style={{background:"none",border:`1px solid ${dex.screenDim}`,borderRadius:5,color:dex.screenMuted,fontSize:10,padding:"4px 8px",cursor:"pointer",fontFamily:"monospace"}}>
-                          Cancel
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
+      <div className="dex-screen" style={{...screenStyle,margin:"0 12px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
+        <PokeballSpinner/>
+        <p style={{color:dex.screenMuted,fontSize:12,fontFamily:"monospace"}}>Loading...</p>
+      </div>
+      <div style={{background:dex.red,padding:"10px 16px",display:"flex",justifyContent:"flex-end",gap:8,flexShrink:0}}>
+        <div style={{width:40,height:8,borderRadius:4,background:dex.darkRed}}/>
+        <div style={{width:24,height:8,borderRadius:4,background:dex.darkRed}}/>
+      </div>
+    </div>
+    </div>
+  );
+
+  // Not authorized
+  if(unauthorized) return (
+    <div className="dex-viewport">
+    <div className="dex-shell">
+      <div style={{background:dex.red,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <DexLights/>
+        <span style={{color:"#fff",fontWeight:500,fontSize:14,fontFamily:"monospace",marginLeft:8}}>POKÉDEX — Living Dex Tracker</span>
+      </div>
+      <div className="dex-screen" style={{...screenStyle,margin:"0 12px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16,textAlign:"center"}}>
+        <div style={{fontSize:48}}>🚫</div>
+        <p style={{margin:0,fontSize:14,color:dex.screenText,fontFamily:"monospace",fontWeight:500}}>Access Denied</p>
+        <p style={{margin:0,fontSize:11,color:dex.screenMuted,fontFamily:"monospace",lineHeight:1.6,maxWidth:280}}>
+          That Google account isn't on the allowed list. Ask the app owner to add your email.
+        </p>
+        <button onClick={()=>{setUnauthorized(false);}}
+          style={{background:"transparent",border:`1px solid ${dex.screenDim}`,borderRadius:6,color:dex.screenMuted,fontSize:11,padding:"6px 16px",cursor:"pointer",fontFamily:"monospace"}}>
+          Try a different account
+        </button>
+      </div>
+      <div style={{background:dex.red,padding:"10px 16px",display:"flex",justifyContent:"flex-end",gap:8,flexShrink:0}}>
+        <div style={{width:40,height:8,borderRadius:4,background:dex.darkRed}}/>
+        <div style={{width:24,height:8,borderRadius:4,background:dex.darkRed}}/>
+      </div>
+    </div>
+    </div>
+  );
+
+  // Not signed in — show Google sign-in screen
+  if(!firebaseUser) return (
+    <div className="dex-viewport">
+    <div className="dex-shell">
+      <div style={{background:dex.red,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,flexShrink:0}}>
+        <DexLights/>
+        <span style={{color:"#fff",fontWeight:500,fontSize:14,fontFamily:"monospace",marginLeft:8}}>POKÉDEX — Living Dex Tracker</span>
+      </div>
+      <div className="dex-screen" style={{...screenStyle,margin:"0 12px",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:20,textAlign:"center"}}>
+        <div style={{fontSize:48}}>🎮</div>
         <div>
-          <p style={{color:dex.screenHeading,fontSize:11,fontFamily:"monospace",margin:"0 0 8px",textTransform:"uppercase",letterSpacing:"0.05em"}}>
-            {savedProfiles.length>0?"New trainer":"Enter your trainer name to begin"}
-          </p>
-          <div style={{display:"flex",gap:8}}>
-            <DexInput value={inputName} onChange={(e:any)=>setInputName(e.target.value)} onKeyDown={(e:any)=>e.key==="Enter"&&handleLogin()} placeholder="Trainer name..." style={{flex:1}}/>
-            <DexButton onClick={()=>handleLogin()}>START</DexButton>
-          </div>
+          <p style={{margin:"0 0 6px",fontSize:16,color:dex.screenText,fontFamily:"monospace",fontWeight:500}}>Living Pokédex Tracker</p>
+          <p style={{margin:0,fontSize:11,color:dex.screenMuted,fontFamily:"monospace",lineHeight:1.6}}>Track your collection across all 9 generations.<br/>Sign in to sync your progress across devices.</p>
         </div>
+        <button onClick={handleLogin}
+          style={{display:"flex",alignItems:"center",gap:10,background:"#fff",border:"none",borderRadius:8,padding:"10px 20px",cursor:"pointer",fontSize:13,fontWeight:500,color:"#333",boxShadow:"0 2px 8px rgba(0,0,0,0.3)"}}>
+          <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844c-.209 1.125-.843 2.078-1.796 2.717v2.258h2.908c1.702-1.567 2.684-3.875 2.684-6.615z"/><path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332z"/><path fill="#EA4335" d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 6.29C4.672 4.163 6.656 3.58 9 3.58z"/></svg>
+          Sign in with Google
+        </button>
+        <p style={{margin:0,fontSize:10,color:dex.screenMuted,fontFamily:"monospace"}}>Your data is stored securely in Firebase</p>
       </div>
       <div style={{background:dex.red,padding:"10px 16px",display:"flex",justifyContent:"flex-end",gap:8,flexShrink:0}}>
         <div style={{width:40,height:8,borderRadius:4,background:dex.darkRed}}/>
@@ -2200,23 +2373,162 @@ function AppInner(){
                   Cached data expires after 7 days.<br/>Clearing forces a fresh fetch from PokéAPI.
                 </p>
               </div>
-              {/* Logout section */}
-              <div style={{padding:"10px 12px"}}>
+              {/* User + Logout section */}
+              <div style={{padding:"10px 12px",display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  {firebaseUser?.photoURL
+                    ?<img src={firebaseUser.photoURL} alt="avatar" width={28} height={28} style={{borderRadius:"50%",flexShrink:0}}/>
+                    :<div style={{width:28,height:28,borderRadius:"50%",background:dex.screenDim,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,color:dex.screenText}}>{username[0]?.toUpperCase()}</div>
+                  }
+                  <span style={{fontSize:11,color:dex.screenText,fontFamily:"monospace",flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{username}</span>
+                </div>
                 <button onClick={()=>{handleLogout();setSettingsOpen(false);}}
                   style={{width:"100%",background:"transparent",border:`1px solid ${dex.screenDim}`,borderRadius:6,color:dex.screenMuted,fontSize:11,padding:"6px 12px",cursor:"pointer",fontFamily:"monospace",textAlign:"left"}}>
-                  ⏻ &nbsp;Log out ({username})
+                  ⏻ &nbsp;Sign out
                 </button>
               </div>
             </div>
           )}
         </div>
       </div>
-      <div style={{background:dex.darkRed,display:"flex",padding:"0 14px",gap:2,flexShrink:0}}>
-        {[{id:"home",label:"HOME"},{id:"tracker",label:"TRACKER"},{id:"team",label:"TEAMS"},{id:"items",label:"ITEMS"},{id:"types",label:"TYPE CHART"},{id:"friends",label:"FRIENDS"}].map(t=>(
-          <button key={t.id} onClick={()=>setTab(t.id)} style={{fontSize:12,fontFamily:"monospace",padding:"7px 14px",cursor:"pointer",border:"none",background:tab===t.id?dex.screen:"transparent",color:tab===t.id?dex.screenText:"rgba(255,255,255,0.55)",borderRadius:"6px 6px 0 0"}}>{t.label}</button>
+      {/* Desktop tab bar — hidden on mobile */}
+      <div style={{background:dex.darkRed,display:"flex",padding:"0 14px",gap:2,flexShrink:0,overflowX:"auto"}}
+        className="desktop-tabs">
+        {[{id:"home",label:"PROGRESS"},{id:"tracker",label:"POKÉDEX"},{id:"team",label:"TEAM BUILDER"},{id:"items",label:"ITEM FINDER"},{id:"types",label:"TYPE CHART"},{id:"friends",label:"FRIENDS"}].map(t=>(
+          <button key={t.id} onClick={()=>setTab(t.id)} style={{fontSize:12,fontFamily:"monospace",padding:"7px 14px",cursor:"pointer",border:"none",background:tab===t.id?dex.screen:"transparent",color:tab===t.id?dex.screenText:"rgba(255,255,255,0.55)",borderRadius:"6px 6px 0 0",whiteSpace:"nowrap",flexShrink:0}}>{t.label}</button>
         ))}
       </div>
-      <div className="dex-screen" style={{...screenStyle,margin:"0 12px 0",borderRadius:"0 8px 8px 8px"}}>
+
+      {/* Mobile menu items — fixed position, independent of ball wrapper */}
+      {[
+        {id:"home",    label:"Progress",     icon:"🏠"},
+        {id:"tracker", label:"Pokédex",      icon:"📋"},
+        {id:"team",    label:"Team Builder", icon:"⚔️"},
+        {id:"items",   label:"Item Finder",  icon:"🎒"},
+        {id:"types",   label:"Type Chart",   icon:"🗂️"},
+        {id:"friends", label:"Friends",      icon:"👥"},
+      ].map((t,i)=>{
+        const n=6, R=170, BX=70, BY=70;
+        // 11 o'clock = 240deg, 7 o'clock = 120deg, step = -24deg
+        const angleDeg=240+(i*(-24));
+        const rad=angleDeg*Math.PI/180;
+        const x=Math.cos(rad)*R;
+        const y=Math.sin(rad)*R;
+        const isActive=tab===t.id;
+        // Ball center when open: right edge of screen - 70px (ball right) + 70px (half ball) = right:0... 
+        // Ball is at right:-70, so ball left edge is at screenWidth-70
+        // Ball center x from right edge of screen = 70 - 70 = 0... 
+        // Actually: ball div is right:-70, width=140, so center is at screenRight - (-70) - 70 = screenRight
+        // From right edge: ball center is at 0px from right (center of ball = right edge of screen)
+        // Arc point x from ball center: x (negative = left)
+        // So arc point from right edge = 0 - x = -x
+        // Item right edge (icon right) should be at arc point from right edge = -x
+        // Item right CSS = -x - 17 (half icon)... but right CSS is distance from RIGHT edge
+        // right = screen_right - item_right_edge_x = -x - 17... but x is negative so -x is positive
+        // Simplified: itemRight = -x - 17
+        const itemRight = Math.round(-x - 17);
+        return (
+          <div key={t.id}
+            className="mobile-tab-btn"
+            onClick={()=>{setTab(t.id);closeMenu();}}
+            style={{
+              display:"none",
+              position:"fixed",
+              right:itemRight,
+              top:`calc(50% + ${Math.round(y)}px)`,
+              transformOrigin:"right center",
+              transform:tabMenuOpen?"translate(0,-50%) scale(1)":"translate(0,-50%) scale(0.4)",
+              opacity:tabMenuOpen?1:0,
+              pointerEvents:tabMenuOpen?"all":"none",
+              transition:`opacity 0.25s ease ${i*40}ms, transform 0.25s ease ${i*40}ms`,
+              zIndex:501,
+              flexDirection:"row",
+              alignItems:"center",
+              gap:10,
+              padding:"12px 14px 12px 18px",
+              borderRadius:10,
+              cursor:"pointer",
+              whiteSpace:"nowrap",
+            }}
+          >
+            <span style={{
+              fontSize:16,fontFamily:"monospace",fontWeight:isActive?700:500,
+              color:isActive?"#ff8888":"rgba(255,255,255,0.95)",
+              textShadow:isActive?"0 0 12px rgba(255,100,100,0.6)":"0 1px 6px rgba(0,0,0,0.9)",
+            }}>{t.label}</span>
+            <div style={{
+              width:42,height:42,display:"flex",alignItems:"center",justifyContent:"center",
+              background:isActive?"rgba(204,0,0,0.3)":"rgba(255,255,255,0.1)",
+              borderRadius:"50%",border:`1.5px solid ${isActive?"#ff6666":"rgba(255,255,255,0.2)"}`,
+              flexShrink:0,fontSize:22,
+              boxShadow:isActive?"0 0 10px rgba(204,0,0,0.4)":"none",
+            }}>{t.icon}</div>
+          </div>
+        );
+      })}
+
+      {/* Mobile radial Pokéball — fixed to right edge, mobile only */}
+      <div className="mobile-tab-btn" style={{
+        display:"none",
+        position:"fixed",
+        right:tabMenuOpen ? -70 : (-100 + Math.min(0, ballDragX)),
+        top:"50%",
+        transform:"translateY(-50%)",
+        zIndex:500,
+        pointerEvents:"all",
+        transition:ballDragRef.current ? "none" : "right 0.35s cubic-bezier(0.4,0,0.2,1)",
+      }}>
+        {/* Pokéball */}
+        <div className="pokeball-wrap"
+          onClick={()=>{tabMenuOpen?closeMenu():setTabMenuOpen(true);}}
+          onMouseDown={(e)=>{ballDragRef.current={startX:e.clientX,startTime:Date.now()};setBallDragX(0);}}
+          onMouseMove={(e)=>{if(!ballDragRef.current)return;setBallDragX(e.clientX-ballDragRef.current.startX);}}
+          onMouseUp={(e)=>{
+            if(!ballDragRef.current)return;
+            const dx=e.clientX-ballDragRef.current.startX;
+            const dt=Date.now()-ballDragRef.current.startTime;
+            ballDragRef.current=null;setBallDragX(0);
+            if(Math.abs(dx)<8&&dt<300){tabMenuOpen?closeMenu():setTabMenuOpen(true);}
+            else if(dx<-40){setTabMenuOpen(true);}
+            else{closeMenu();}
+          }}
+          onTouchStart={(e)=>{ballDragRef.current={startX:e.touches[0].clientX,startTime:Date.now()};setBallDragX(0);}}
+          onTouchMove={(e)=>{if(!ballDragRef.current)return;setBallDragX(e.touches[0].clientX-ballDragRef.current.startX);}}
+          onTouchEnd={(e)=>{
+            e.preventDefault();
+            const startX=ballDragRef.current?.startX??e.changedTouches[0].clientX;
+            const startTime=ballDragRef.current?.startTime??Date.now();
+            const dx=e.changedTouches[0].clientX-startX;
+            const dt=Date.now()-startTime;
+            ballDragRef.current=null;setBallDragX(0);
+            if(Math.abs(dx)<8&&dt<500){tabMenuOpen?closeMenu():setTabMenuOpen(true);}
+            else if(dx<-40){setTabMenuOpen(true);}
+            else{closeMenu();}
+          }}
+          style={{
+            width:140,height:140,borderRadius:"50%",overflow:"hidden",
+            border:"3px solid rgba(255,255,255,0.25)",cursor:"pointer",
+            position:"relative",
+            opacity:tabMenuOpen?0.45:1,
+            transition:"opacity 0.3s ease",
+            animation:tabMenuOpen?"ballWobble 0.4s ease-out":tabMenuClosing?"ballWobbleClose 0.4s ease-out":"none",
+          }}>
+          <div style={{position:"absolute",top:0,left:0,right:0,height:"50%",background:"#CC0000"}}/>
+          <div style={{position:"absolute",bottom:0,left:0,right:0,height:"50%",background:"#eeeeee"}}/>
+          <div style={{position:"absolute",top:"calc(50% - 2px)",left:0,right:0,height:4,background:"#222"}}/>
+          <div style={{position:"absolute",top:"50%",left:"50%",transform:"translate(-50%,-50%)",width:28,height:28,borderRadius:"50%",background:tabMenuOpen?"#CC0000":"#fff",border:"4px solid #222",zIndex:2,transition:"background 0.2s"}}/>
+        </div>
+      </div>
+
+      {/* Dim overlay when mobile menu is open — mobile only */}
+      {tabMenuOpen&&(
+        <div className="mobile-tab-btn"
+          onClick={()=>closeMenu()}
+          onTouchStart={e=>e.stopPropagation()}
+          onMouseDown={e=>e.stopPropagation()}
+          style={{display:"none",position:"fixed",inset:0,zIndex:498,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(2px)",touchAction:"none"}}/>
+      )}
+      <div className="dex-screen" style={{...screenStyle,margin:"0 12px 0",borderRadius:"8px"}}>
         {tab==="home"&&(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             {/* Overall living dex progress */}
@@ -2269,8 +2581,10 @@ function AppInner(){
           </div>
         )}
         {tab==="tracker"&&(
-          <>
-            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:12}}>
+          <div style={{display:"flex",flexDirection:"column",height:"100%",margin:"-14px",overflow:"hidden"}}>
+            {/* Fixed filter bar — never scrolls */}
+            <div style={{padding:"10px 14px",borderBottom:`1px solid ${dex.screenDim}`,flexShrink:0,background:dex.screen}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
               {/* Waffle button */}
               <div style={{position:"relative"}}>
                 <button onClick={()=>setWaffleOpen(v=>!v)}
@@ -2329,12 +2643,18 @@ function AppInner(){
             </div>
             {genVisible&&(
               <>
-                <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
+              <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
                   <DexInput value={search} onChange={(e:any)=>setSearch(e.target.value)} placeholder="Search name or #..." style={{flex:1,minWidth:110}}/>
                   <DexSelect value={filter} onChange={(e:any)=>setFilter(e.target.value)}>
                     <option value="all">All</option>
                     <option value="caught">Caught</option>
                     <option value="missing">Missing</option>
+                  </DexSelect>
+                  <DexSelect value={typeFilter} onChange={(e:any)=>setTypeFilter(e.target.value)}>
+                    <option value="all">All types</option>
+                    {["normal","fire","water","electric","grass","ice","fighting","poison","ground","flying","psychic","bug","rock","ghost","dragon","dark","steel","fairy"].map(t=>(
+                      <option key={t} value={t}>{t.charAt(0).toUpperCase()+t.slice(1)}</option>
+                    ))}
                   </DexSelect>
                   <div style={{display:"flex",border:`1px solid ${dex.screenDim}`,borderRadius:6,overflow:"hidden"}}>
                     {[["grid","⊞"],["list","☰"]].map(([mode,icon])=>(
@@ -2342,55 +2662,63 @@ function AppInner(){
                     ))}
                   </div>
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                  <DexInput value={quickEntry} onChange={(e:any)=>setQuickEntry(e.target.value)} onKeyDown={handleQuick} placeholder="Quick toggle: name or # + Enter" style={{flex:1}}/>
-                  {quickFeedback&&<span style={{fontSize:11,color:"#88cc88",fontFamily:"monospace",whiteSpace:"nowrap"}}>{quickFeedback}</span>}
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,flexWrap:"wrap"}}>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                   <DexButton onClick={()=>{setSelectMode(v=>!v);if(selectMode)exitSelectMode();}} active={selectMode} style={{fontSize:11,padding:"3px 10px"}}>
-                    {selectMode?"Exit select (S)":"Select (S)"}
+                    {selectMode?"Exit select":"Select"}
                   </DexButton>
-                  {selectMode&&!selected.size&&<span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>tap to pick · long press to anchor range · shift+click on desktop</span>}
+                  {selectMode&&!selected.size&&<span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>long press a card to begin</span>}
                   {selectMode&&selected.size>0&&!rangeAnchor&&<span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>long press to set range anchor</span>}
-                  {rangeAnchor&&<span style={{fontSize:11,color:"#ffcc44",fontFamily:"monospace"}}>⚓ anchor set — tap another to complete range</span>}
-                  {selected.size>0&&<>
+                  {rangeAnchor&&<span style={{fontSize:11,color:"#ffcc44",fontFamily:"monospace"}}>⚓ anchor set</span>}
+                </div>
+                {selected.size>0&&(
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:6,paddingTop:6,borderTop:`1px solid ${dex.screenDim}`}}>
                     <span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace"}}>{selected.size} selected</span>
                     <DexButton onClick={()=>applyBulk(true)} style={{fontSize:11,padding:"3px 10px",background:"#1a3a1a",borderColor:"#3a6a2a",color:"#88cc88"}}>Mark caught</DexButton>
                     <DexButton onClick={()=>applyBulk(false)} style={{fontSize:11,padding:"3px 10px"}}>Mark missing</DexButton>
                     <DexButton onClick={()=>{setSelected(new Set());setLastClicked(null);}} style={{fontSize:11,padding:"3px 10px"}}>Clear</DexButton>
-                  </>}
-                </div>
-                {viewMode==="grid"
-                  ?<div onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:6,userSelect:"none",WebkitUserSelect:"none" as any}}>
-                    {renderedList.map((mon:any)=><GridCard key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} isAnchor={rangeAnchor===mon.id} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox} onLongPress={handleLongPress}/>)}
                   </div>
-                  :<div onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}} style={{border:`1px solid ${dex.screenDim}`,borderRadius:8,overflow:"hidden",userSelect:"none",WebkitUserSelect:"none" as any}}>
-                    {renderedList.map((mon:any)=><ListRow key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} isAnchor={rangeAnchor===mon.id} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox} onLongPress={handleLongPress}/>)}
-                  </div>
-                }
-                {renderLimit < filtered.length && (
-                  <p style={{color:dex.screenMuted,fontSize:11,textAlign:"center",padding:"8px 0",fontFamily:"monospace"}}>Loading...</p>
                 )}
-                {filtered.length===0&&<p style={{color:dex.screenMuted,fontSize:13,textAlign:"center",padding:"2rem 0",fontFamily:"monospace"}}>No Pokémon found.</p>}
               </>
             )}
-          </>
+            </div>{/* end fixed filter bar */}
+
+            {/* Scrollable grid area */}
+            <div ref={scrollRef} style={{flex:1,overflowY:"auto",padding:"10px 14px",position:"relative"}}>
+              {genVisible&&(
+                <>
+                  {viewMode==="grid"
+                    ?<div onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}} style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:6,userSelect:"none",WebkitUserSelect:"none" as any}}>
+                      {renderedList.map((mon:any)=><GridCard key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} isAnchor={rangeAnchor===mon.id} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox} onLongPress={handleLongPress}/>)}
+                    </div>
+                    :<div onMouseDown={e=>{if(e.shiftKey)e.preventDefault();}} style={{border:`1px solid ${dex.screenDim}`,borderRadius:8,overflow:"hidden",userSelect:"none",WebkitUserSelect:"none" as any}}>
+                      {renderedList.map((mon:any)=><ListRow key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} isAnchor={rangeAnchor===mon.id} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox} onLongPress={handleLongPress}/>)}
+                    </div>
+                  }
+                  {renderLimit < filtered.length && (
+                    <p style={{color:dex.screenMuted,fontSize:11,textAlign:"center",padding:"8px 0",fontFamily:"monospace"}}>
+                      Showing {Math.min(renderLimit,filtered.length)} of {filtered.length} — scroll for more
+                    </p>
+                  )}
+                  {filtered.length===0&&<p style={{color:dex.screenMuted,fontSize:13,textAlign:"center",padding:"2rem 0",fontFamily:"monospace"}}>No Pokémon found.</p>}
+                </>
+              )}
+            </div>
+          </div>
         )}
         {tab==="items"&&<ItemFinder/>}
-        {tab==="team"&&<TeamBuilder username={username}/>}
+        {tab==="team"&&<TeamBuilder username={uid||username}/>}
         {tab==="types"&&<TypeChart/>}
         {tab==="friends"&&(
           <>
-            <p style={{color:dex.screenHeading,fontSize:12,marginBottom:14,fontFamily:"monospace"}}>Share your trainer name so friends can find you here.</p>
+            <p style={{color:dex.screenHeading,fontSize:12,marginBottom:14,fontFamily:"monospace"}}>Friends who have signed in with Google will appear here.</p>
             {friends.length===0
-              ?<p style={{color:dex.screenMuted,fontSize:13,fontFamily:"monospace"}}>No trainers found yet.</p>
+              ?<p style={{color:dex.screenMuted,fontSize:13,fontFamily:"monospace"}}>No other trainers found yet.</p>
               :<div style={{display:"flex",flexDirection:"column",gap:6}}>
                 {friends.map((f,i)=>(
-                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:f.name.toLowerCase()===username.toLowerCase()?"#0d1a2a":dex.screenBg,borderRadius:8,border:`1px solid ${f.name.toLowerCase()===username.toLowerCase()?"#334488":dex.screenDim}`}}>
+                  <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:dex.screenBg,borderRadius:8,border:`1px solid ${dex.screenDim}`}}>
                     <div style={{width:28,height:28,borderRadius:"50%",background:dex.screenDim,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:500,fontSize:12,color:dex.screenText,fontFamily:"monospace",border:`1px solid ${dex.screenBorder}`}}>{f.name[0].toUpperCase()}</div>
-                    <span style={{fontFamily:"monospace",fontSize:13,color:dex.screenText,fontWeight:500}}>{f.name}</span>
-                    {f.name.toLowerCase()===username.toLowerCase()&&<span style={{fontSize:10,color:"#8888ff",fontFamily:"monospace"}}>(you)</span>}
-                    <span style={{marginLeft:"auto",fontSize:12,color:dex.screenMuted,fontFamily:"monospace"}}>{f.count}/{total} · {Math.round((f.count/total)*100)}%</span>
+                    <span style={{fontFamily:"monospace",fontSize:13,color:dex.screenText,fontWeight:500,flex:1}}>{f.name}</span>
+                    <span style={{fontSize:12,color:dex.screenMuted,fontFamily:"monospace"}}>{f.count}/{total} · {Math.round((f.count/total)*100)}%</span>
                     <div style={{width:70,height:5,background:dex.screenDim,borderRadius:3,overflow:"hidden"}}>
                       <div style={{height:"100%",borderRadius:3,width:`${Math.round((f.count/total)*100)}%`,background:f.count===total?"#55cc55":"#378ADD"}}/>
                     </div>

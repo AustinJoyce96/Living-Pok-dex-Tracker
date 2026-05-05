@@ -1,23 +1,54 @@
 import { useState, useEffect, useCallback } from "react";
 
-const getItem = async (key) => {
-  if (typeof window !== "undefined" && window.storage) {
-    try { const r = await window.storage.get(key, true); return r ? r.value : null; } catch { return null; }
+const win = window as any;
+const getItem = async (key: string): Promise<string | null> => {
+  if (win.storage) {
+    try { const r = await win.storage.get(key, true); return r ? r.value : null; } catch { return null; }
   }
   return localStorage.getItem(key);
 };
-const setItem = async (key, value) => {
-  if (typeof window !== "undefined" && window.storage) {
-    try { await window.storage.set(key, value, true); } catch {}
+const setItem = async (key: string, value: string): Promise<void> => {
+  if (win.storage) {
+    try { await win.storage.set(key, value, true); } catch {}
   } else {
     localStorage.setItem(key, value);
   }
 };
-const listKeys = async (prefix) => {
-  if (typeof window !== "undefined" && window.storage) {
-    try { const r = await window.storage.list(prefix, true); return r ? r.keys : []; } catch { return []; }
+const listKeys = async (prefix: string): Promise<string[]> => {
+  if (win.storage) {
+    try { const r = await win.storage.list(prefix, true); return r ? r.keys : []; } catch { return []; }
   }
-  return Object.keys(localStorage).filter(k => k.startsWith(prefix));
+  return Object.keys(localStorage).filter((k: string) => k.startsWith(prefix));
+};
+
+const pokeCache: {[key:string]:any} = {};
+const fetchPoke = async (url:string) => {
+  if (pokeCache[url]) return pokeCache[url];
+  const r = await fetch(url);
+  const d = await r.json();
+  pokeCache[url] = d;
+  return d;
+};
+
+const VERSION_GROUPS: {[key:string]:{label:string,gen:number}} = {
+  "red-blue":                {label:"Gen 1 — Red/Blue",      gen:1},
+  "yellow":                  {label:"Gen 1 — Yellow",         gen:1},
+  "gold-silver":             {label:"Gen 2 — Gold/Silver",    gen:2},
+  "crystal":                 {label:"Gen 2 — Crystal",        gen:2},
+  "ruby-sapphire":           {label:"Gen 3 — Ruby/Sapphire",  gen:3},
+  "emerald":                 {label:"Gen 3 — Emerald",        gen:3},
+  "firered-leafgreen":       {label:"Gen 3 — FR/LG",          gen:3},
+  "diamond-pearl":           {label:"Gen 4 — Diamond/Pearl",  gen:4},
+  "platinum":                {label:"Gen 4 — Platinum",       gen:4},
+  "heartgold-soulsilver":    {label:"Gen 4 — HG/SS",          gen:4},
+  "black-white":             {label:"Gen 5 — Black/White",    gen:5},
+  "black-2-white-2":         {label:"Gen 5 — B2/W2",          gen:5},
+  "x-y":                     {label:"Gen 6 — X/Y",            gen:6},
+  "omega-ruby-alpha-sapphire":{label:"Gen 6 — OR/AS",         gen:6},
+  "sun-moon":                {label:"Gen 7 — Sun/Moon",       gen:7},
+  "ultra-sun-ultra-moon":    {label:"Gen 7 — US/UM",          gen:7},
+  "sword-shield":            {label:"Gen 8 — Sword/Shield",   gen:8},
+  "scarlet-violet":          {label:"Gen 9 — Scarlet/Violet", gen:9},
 };
 
 const CATCH_DATA = {
@@ -174,7 +205,7 @@ const CATCH_DATA = {
   151:{types:["psychic"],games:[{game:"Red/Blue",locations:[{name:"Event/Glitch only",method:"event"}]},{game:"FireRed/LeafGreen",locations:[{name:"Faraway Island (event)",method:"event"}]}]},
 };
 
-const TYPE_COLORS = {
+const TYPE_COLORS: {[key:string]:string} = {
   normal:"#A8A878",fire:"#F08030",water:"#6890F0",electric:"#F8D030",
   grass:"#78C850",ice:"#98D8D8",fighting:"#C03028",poison:"#A040A0",
   ground:"#E0C068",flying:"#A890F0",psychic:"#F85888",bug:"#A8B820",
@@ -182,7 +213,7 @@ const TYPE_COLORS = {
   steel:"#B8B8D0",fairy:"#EE99AC"
 };
 
-const METHOD_COLORS = {
+const METHOD_COLORS: {[key:string]:{bg:string,text:string}} = {
   wild:    {bg:"#E6F1FB",text:"#185FA5"},
   fishing: {bg:"#E1F5EE",text:"#0F6E56"},
   static:  {bg:"#FAEEDA",text:"#854F0B"},
@@ -201,14 +232,14 @@ const dex = {
   screenBg:"#0d0d1a",screenHeading:"#88aacc",
 };
 
-function spriteUrl(id){return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;}
+function spriteUrl(id:number){return `https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/${id}.png`;}
 
-function TypeBadge({type}){
+function TypeBadge({type}:{type:string}){
   const c=TYPE_COLORS[type]||"#888";
   return <span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:c+"33",color:c,fontWeight:500,textTransform:"capitalize",whiteSpace:"nowrap"}}>{type}</span>;
 }
 
-function Pokeball({caught,size=28,onClick}){
+function Pokeball({caught,size=28,onClick}:{caught:boolean,size?:number,onClick?:()=>void}){
   const r=size/2;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} onClick={onClick} style={{cursor:"pointer",display:"block",flexShrink:0}}>
@@ -217,8 +248,57 @@ function Pokeball({caught,size=28,onClick}){
       <circle cx={r} cy={r} r={r-1} fill="none" stroke={caught?"#333":"#445"} strokeWidth={1.5}/>
       <line x1={1} y1={r} x2={size-1} y2={r} stroke={caught?"#333":"#445"} strokeWidth={1.5}/>
       <circle cx={r} cy={r} r={r*0.3} fill={caught?"#fff":"transparent"} stroke={caught?"#333":"#445"} strokeWidth={1.5}/>
-      {caught&&<circle cx={r} cy={r} r={r*0.14} fill="#CC0000"/>}
+      {caught&&<circle cx={r} cy={r} r={r*0.14} fill="#aaaaaa"/>}
     </svg>
+  );
+}
+
+function PokeballSpinner(){
+  const [angle,setAngle]=useState(0);
+  useEffect(()=>{
+    const id=setInterval(()=>setAngle(a=>(a+8)%360),16);
+    return()=>clearInterval(id);
+  },[]);
+  const r=20;
+  return (
+    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:"2rem 0"}}>
+      <svg width={44} height={44} viewBox="0 0 44 44" style={{transform:`rotate(${angle}deg)`}}>
+        <path d={`M2,22 A20,20 0 0,1 42,22`} fill="#CC0000" stroke="#991100" strokeWidth={1}/>
+        <path d={`M2,22 A20,20 0 0,0 42,22`} fill="#eeeeee" stroke="#cccccc" strokeWidth={1}/>
+        <circle cx={22} cy={22} r={20} fill="none" stroke="#333" strokeWidth={2}/>
+        <line x1={2} y1={22} x2={42} y2={22} stroke="#333" strokeWidth={2}/>
+        <circle cx={22} cy={22} r={6} fill="#fff" stroke="#333" strokeWidth={2}/>
+        <circle cx={22} cy={22} r={3} fill="#aaa"/>
+      </svg>
+      <span style={{fontSize:12,color:dex.screenMuted,fontFamily:"monospace"}}>Loading...</span>
+    </div>
+  );
+}
+
+function MoveTable({moves}:{moves:any[]}){
+  if(!moves.length) return <p style={{color:dex.screenMuted,fontSize:12,fontFamily:"monospace"}}>No moves found for this version.</p>;
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {moves.map((m,i)=>{
+        const tc=TYPE_COLORS[m.type]||"#888";
+        const catColor=m.category==="physical"?"#F08030":m.category==="special"?"#6890F0":"#A8A878";
+        return (
+          <div key={i} style={{background:dex.screenBg,border:`1px solid ${dex.screenDim}`,borderRadius:8,padding:"8px 12px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4,flexWrap:"wrap"}}>
+              {m.level!=null&&<span style={{fontSize:11,color:"#ffcc44",fontFamily:"monospace",minWidth:40}}>Lv.{m.level}</span>}
+              {m.tm&&<span style={{fontSize:11,color:"#88aaff",fontFamily:"monospace",minWidth:40}}>{m.tm}</span>}
+              <span style={{fontSize:13,color:dex.screenText,fontFamily:"monospace",fontWeight:500}}>{m.name}</span>
+              <span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:tc+"33",color:tc,fontWeight:500,textTransform:"capitalize"}}>{m.type}</span>
+              <span style={{fontSize:10,padding:"1px 6px",borderRadius:8,background:catColor+"33",color:catColor,fontWeight:500,textTransform:"capitalize"}}>{m.category}</span>
+              <span style={{fontSize:11,color:dex.screenMuted,fontFamily:"monospace",marginLeft:"auto"}}>
+                {m.power?`⚔ ${m.power}`:"—"} &nbsp; {m.accuracy?`🎯 ${m.accuracy}%`:"—"}
+              </span>
+            </div>
+            <p style={{margin:0,fontSize:11,color:dex.screenMuted,fontFamily:"monospace",lineHeight:1.5}}>{m.description}</p>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -233,7 +313,7 @@ function DexLights(){
   );
 }
 
-function DexInput({value,onChange,onKeyDown,placeholder,style={}}){
+function DexInput({value,onChange,onKeyDown=()=>{},placeholder,style={}}:{value:any,onChange:any,onKeyDown?:any,placeholder:any,style?:any}){
   return (
     <input value={value} onChange={onChange} onKeyDown={onKeyDown} placeholder={placeholder}
       style={{background:dex.screenBg,border:`1px solid ${dex.screenDim}`,borderRadius:6,color:dex.screenText,padding:"6px 10px",fontSize:12,fontFamily:"monospace",outline:"none",width:"100%",boxSizing:"border-box",...style}}
@@ -241,7 +321,7 @@ function DexInput({value,onChange,onKeyDown,placeholder,style={}}){
   );
 }
 
-function DexSelect({value,onChange,children,style={}}){
+function DexSelect({value,onChange,children,style={}}:{value:any,onChange:any,children:any,style?:any}){
   return (
     <select value={value} onChange={onChange}
       style={{background:dex.screenBg,border:`1px solid ${dex.screenDim}`,borderRadius:6,color:dex.screenText,padding:"5px 8px",fontSize:12,fontFamily:"monospace",outline:"none",...style}}>
@@ -250,7 +330,7 @@ function DexSelect({value,onChange,children,style={}}){
   );
 }
 
-function DexButton({onClick,active,children,style={}}){
+function DexButton({onClick,active=false,children,style={}}:{onClick:()=>void,active?:boolean,children:any,style?:any}){
   return (
     <button onClick={onClick} style={{background:active?dex.red:"transparent",border:`1px solid ${active?dex.red:dex.screenDim}`,borderRadius:6,color:active?"#fff":dex.screenMuted,padding:"5px 12px",fontSize:12,fontFamily:"monospace",cursor:"pointer",...style}}>
       {children}
@@ -258,77 +338,168 @@ function DexButton({onClick,active,children,style={}}){
   );
 }
 
-function GridCard({mon,caught,selected,selectMode,onToggle,onDetail,onCardClick,onCheckbox}){
-  const types=CATCH_DATA[mon.id]?.types||[];
+function GridCard({mon,caught,selected,selectMode,onToggle,onDetail,onCardClick,onCheckbox}:{mon:any,caught:boolean,selected:boolean,selectMode:boolean,onToggle:any,onDetail:any,onCardClick:any,onCheckbox:any}){
+  const types=(CATCH_DATA as any)[mon.id]?.types||[];
   return (
     <div onClick={e=>onCardClick(mon,e,()=>onDetail(mon))} style={{border:`1px solid ${selected?"#5588ff":caught?"#3a5a2a":dex.screenDim}`,borderRadius:8,background:selected?"#0d1a30":caught?"#0d1f0d":dex.screenBg,padding:"8px 4px 6px",display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer",opacity:caught||selected?1:0.55,transition:"all 0.15s",outline:selected?"2px solid #5588ff":"none",position:"relative"}}>
       {selectMode&&<input type="checkbox" checked={selected} onChange={e=>onCheckbox(mon.id,e)} onClick={e=>e.stopPropagation()} style={{position:"absolute",top:5,right:5,width:14,height:14,cursor:"pointer",accentColor:"#5588ff"}}/>}
       <span style={{fontSize:10,color:selected?"#8899ff":dex.screenHeading,alignSelf:"flex-start",paddingLeft:4,fontFamily:"monospace"}}>#{String(mon.id).padStart(3,"0")}</span>
-      <img src={spriteUrl(mon.id)} alt={mon.name} width={48} height={48} style={{imageRendering:"pixelated",filter:caught?"none":"grayscale(100%)"}} onError={e=>{e.target.style.opacity="0.1";}}/>
+      <img src={spriteUrl(mon.id)} alt={mon.name} width={48} height={48} style={{imageRendering:"pixelated",filter:caught?"none":"grayscale(100%)"}} onError={e=>{(e.target as HTMLImageElement).style.opacity="0.1";}}/>
       <span style={{fontSize:11,color:dex.screenText,textAlign:"center",lineHeight:1.2,width:"100%",padding:"0 3px",wordBreak:"break-word",fontFamily:"monospace"}}>{mon.name}</span>
-      <div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center"}}>{types.map(t=><TypeBadge key={t} type={t}/>)}</div>
+      <div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center"}}>{types.map((t:string)=><TypeBadge key={t} type={t}/>)}</div>
       <div onClick={e=>{e.stopPropagation();onToggle(mon.id);}} style={{marginTop:4}}><Pokeball caught={caught} size={26}/></div>
     </div>
   );
 }
 
-function ListRow({mon,caught,selected,selectMode,onToggle,onDetail,onCardClick,onCheckbox}){
-  const types=CATCH_DATA[mon.id]?.types||[];
+function ListRow({mon,caught,selected,selectMode,onToggle,onDetail,onCardClick,onCheckbox}:{mon:any,caught:boolean,selected:boolean,selectMode:boolean,onToggle:any,onDetail:any,onCardClick:any,onCheckbox:any}){
+  const types=(CATCH_DATA as any)[mon.id]?.types||[];
   return (
     <div onClick={e=>onCardClick(mon,e,()=>onDetail(mon))} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 12px",borderBottom:`1px solid ${dex.screenDim}`,cursor:"pointer",background:selected?"#0d1a30":caught?"#0d1f0d":"transparent",outline:selected?"2px solid #5588ff":"none"}}>
       {selectMode&&<input type="checkbox" checked={selected} onChange={e=>onCheckbox(mon.id,e)} onClick={e=>e.stopPropagation()} style={{width:14,height:14,cursor:"pointer",accentColor:"#5588ff",flexShrink:0}}/>}
       <span style={{fontSize:11,color:selected?"#8899ff":dex.screenHeading,minWidth:32,fontFamily:"monospace"}}>#{String(mon.id).padStart(3,"0")}</span>
-      <img src={spriteUrl(mon.id)} alt={mon.name} width={36} height={36} style={{imageRendering:"pixelated",filter:caught?"none":"grayscale(100%)",opacity:caught?1:0.45}} onError={e=>{e.target.style.opacity="0.1";}}/>
+      <img src={spriteUrl(mon.id)} alt={mon.name} width={36} height={36} style={{imageRendering:"pixelated",filter:caught?"none":"grayscale(100%)",opacity:caught?1:0.45}} onError={e=>{(e.target as HTMLImageElement).style.opacity="0.1";}}/>
       <span style={{flex:1,fontSize:13,color:dex.screenText,fontFamily:"monospace",fontWeight:caught?500:400}}>{mon.name}</span>
-      <div style={{display:"flex",gap:3}}>{types.map(t=><TypeBadge key={t} type={t}/>)}</div>
+      <div style={{display:"flex",gap:3}}>{types.map((t:string)=><TypeBadge key={t} type={t}/>)}</div>
       <div onClick={e=>{e.stopPropagation();onToggle(mon.id);}}><Pokeball caught={caught} size={28}/></div>
     </div>
   );
 }
 
-function DetailPanel({mon,onClose}){
+function DetailPanel({mon,onClose}:{mon:any,onClose:()=>void}){
   if(!mon)return null;
-  const data=CATCH_DATA[mon.id];
+  const data=(CATCH_DATA as any)[mon.id];
   const typeColor=TYPE_COLORS[data?.types?.[0]]||"#888";
+  const [activeTab,setActiveTab]=useState("catch");
+  const [versionGroup,setVersionGroup]=useState("");
+  const [availableVersions,setAvailableVersions]=useState<string[]>([]);
+  const [levelMoves,setLevelMoves]=useState<any[]>([]);
+  const [tmMoves,setTmMoves]=useState<any[]>([]);
+  const [loading,setLoading]=useState(false);
+
+  const canFetch = mon.id === 1;
+
+  useEffect(()=>{
+    if(!canFetch)return;
+    const load=async()=>{
+      setLoading(true);
+      try{
+        const poke=await fetchPoke(`https://pokeapi.co/api/v2/pokemon/${mon.id}`);
+        const vgs=[...new Set(poke.moves.flatMap((m:any)=>
+          m.version_group_details.map((v:any)=>v.version_group.name)
+        ))].filter((v:any)=>VERSION_GROUPS[v]) as string[];
+        vgs.sort((a,b)=>VERSION_GROUPS[a].gen-VERSION_GROUPS[b].gen);
+        setAvailableVersions(vgs);
+        setVersionGroup(vgs[vgs.length-1]);
+      }catch(e){console.error(e);}
+      finally{setLoading(false);}
+    };
+    load();
+  },[mon.id]);
+
+  useEffect(()=>{
+    if(!canFetch||!versionGroup)return;
+    const load=async()=>{
+      setLoading(true);
+      try{
+        const poke=await fetchPoke(`https://pokeapi.co/api/v2/pokemon/${mon.id}`);
+        const movesInVersion=poke.moves.filter((m:any)=>
+          m.version_group_details.some((v:any)=>v.version_group.name===versionGroup)
+        );
+        const moveDetails=await Promise.all(movesInVersion.map(async(m:any)=>{
+          const detail=await fetchPoke(m.move.url);
+          const vgd=m.version_group_details.find((v:any)=>v.version_group.name===versionGroup);
+          const desc=detail.flavor_text_entries.find((f:any)=>f.language.name==="en")?.flavor_text?.replace(/\n|\f/g," ")||"No description.";
+          const tmEntry=detail.machines?.find((mc:any)=>mc.version_group?.name===versionGroup);
+          let tmLabel="TM";
+          if(tmEntry){
+            try{const mcData=await fetchPoke(tmEntry.machine.url);tmLabel=`TM${String(mcData.item?.name?.match(/\d+/)?.[0]||"").padStart(2,"0")}`;}catch{}
+          }
+          return {
+            name:detail.name.replace(/-/g," ").replace(/\b\w/g,(c:string)=>c.toUpperCase()),
+            type:detail.type.name,
+            category:detail.damage_class.name,
+            power:detail.power,
+            accuracy:detail.accuracy,
+            description:desc,
+            method:vgd.move_learn_method.name,
+            level:vgd.move_learn_method.name==="level-up"?vgd.level_learned_at:null,
+            tm:vgd.move_learn_method.name==="machine"?tmLabel:null,
+          };
+        }));
+        setLevelMoves(moveDetails.filter(m=>m.method==="level-up").sort((a,b)=>a.level-b.level));
+        setTmMoves(moveDetails.filter(m=>m.method==="machine").sort((a,b)=>a.name.localeCompare(b.name)));
+      }catch(e){console.error(e);}
+      finally{setLoading(false);}
+    };
+    load();
+  },[mon.id,versionGroup]);
+
+  const tabs=["catch",...(canFetch?["levelup","tm"]:[])];
+  const tabLabels:any={catch:"Catch Info",levelup:"Level-Up Moves",tm:"TM Moves"};
+
   return (
     <div style={{position:"fixed",inset:0,display:"flex",alignItems:"center",justifyContent:"center",zIndex:999,background:"rgba(0,0,0,0.75)"}} onClick={onClose}>
-      <div onClick={e=>e.stopPropagation()} style={{width:"min(480px,92vw)",maxHeight:"85vh",borderRadius:16,border:`3px solid ${dex.red}`,background:dex.red,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"min(580px,95vw)",maxHeight:"90vh",borderRadius:16,border:`3px solid ${dex.red}`,background:dex.red,overflow:"hidden",display:"flex",flexDirection:"column"}}>
         <div style={{background:dex.red,padding:"10px 16px",display:"flex",alignItems:"center",justifyContent:"space-between",flexShrink:0}}>
           <DexLights/>
           <button onClick={onClose} style={{background:"none",border:"none",color:"#fff",fontSize:18,cursor:"pointer",fontWeight:500,lineHeight:1}}>✕</button>
         </div>
-        <div style={{background:dex.screen,margin:"0 12px",borderRadius:8,border:`4px solid ${dex.screenBorder}`,padding:16,overflowY:"auto",flex:1}}>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-            <div style={{background:typeColor+"22",borderRadius:8,padding:4,border:`1px solid ${typeColor}44`,flexShrink:0}}>
-              <img src={spriteUrl(mon.id)} alt={mon.name} width={72} height={72} style={{imageRendering:"pixelated",display:"block"}} onError={e=>{e.target.style.opacity="0.2";}}/>
-            </div>
-            <div>
-              <p style={{margin:0,fontSize:11,color:dex.screenHeading,fontFamily:"monospace"}}>No. {String(mon.id).padStart(3,"0")}</p>
-              <h2 style={{margin:"2px 0 6px",fontSize:20,fontWeight:500,color:"#e8e8ff",fontFamily:"monospace"}}>{mon.name}</h2>
-              <div style={{display:"flex",gap:4}}>{data?.types?.map(t=><TypeBadge key={t} type={t}/>)}</div>
+        <div style={{background:dex.screen,margin:"0 12px",borderRadius:8,border:`4px solid ${dex.screenBorder}`,display:"flex",flexDirection:"column",flex:1,overflow:"hidden"}}>
+          <div style={{padding:"12px 16px",borderBottom:`1px solid ${dex.screenDim}`,flexShrink:0}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{background:typeColor+"22",borderRadius:8,padding:4,border:`1px solid ${typeColor}44`,flexShrink:0}}>
+                <img src={spriteUrl(mon.id)} alt={mon.name} width={64} height={64} style={{imageRendering:"pixelated",display:"block"}} onError={e=>{(e.target as HTMLImageElement).style.opacity="0.2";}}/>
+              </div>
+              <div style={{flex:1}}>
+                <p style={{margin:0,fontSize:11,color:dex.screenHeading,fontFamily:"monospace"}}>No. {String(mon.id).padStart(3,"0")}</p>
+                <h2 style={{margin:"2px 0 6px",fontSize:18,fontWeight:500,color:"#e8e8ff",fontFamily:"monospace"}}>{mon.name}</h2>
+                <div style={{display:"flex",gap:4}}>{data?.types?.map((t:string)=><TypeBadge key={t} type={t}/>)}</div>
+              </div>
+              {canFetch&&availableVersions.length>0&&(
+                <DexSelect value={versionGroup} onChange={(e:any)=>setVersionGroup(e.target.value)} style={{fontSize:11,maxWidth:160}}>
+                  {availableVersions.map(v=>(
+                    <option key={v} value={v}>{VERSION_GROUPS[v]?.label||v}</option>
+                  ))}
+                </DexSelect>
+              )}
             </div>
           </div>
-          <div style={{height:1,background:dex.screenDim,marginBottom:12}}/>
-          {!data&&<p style={{color:dex.screenMuted,fontSize:13,fontFamily:"monospace"}}>No data available.</p>}
-          {data?.games.map((g,i)=>(
-            <div key={i} style={{marginBottom:14}}>
-              <p style={{margin:"0 0 6px",fontSize:12,color:typeColor,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.05em",fontFamily:"monospace"}}>{g.game}</p>
-              <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                {g.locations.map((loc,j)=>{
-                  const mc=METHOD_COLORS[loc.method]||METHOD_COLORS.event;
-                  return (
-                    <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:dex.screenBg,borderRadius:6,padding:"6px 10px",gap:8,border:`0.5px solid ${dex.screenDim}`}}>
-                      <span style={{fontSize:12,color:dex.screenText,fontFamily:"monospace"}}>{loc.name}</span>
-                      <span style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
-                        <span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:mc.bg,color:mc.text,fontWeight:500}}>{loc.method}</span>
-                        {loc.rate&&<span style={{fontSize:11,color:dex.screenMuted}}>{loc.rate}</span>}
-                      </span>
+          <div style={{display:"flex",background:dex.screenBg,borderBottom:`1px solid ${dex.screenDim}`,flexShrink:0}}>
+            {tabs.map(t=>(
+              <button key={t} onClick={()=>setActiveTab(t)} style={{flex:1,padding:"8px 4px",fontSize:11,fontFamily:"monospace",border:"none",cursor:"pointer",background:activeTab===t?dex.screen:"transparent",color:activeTab===t?dex.screenText:dex.screenMuted,borderBottom:activeTab===t?`2px solid ${dex.red}`:"2px solid transparent"}}>
+                {tabLabels[t]}
+              </button>
+            ))}
+          </div>
+          <div style={{overflowY:"auto",flex:1,padding:"12px 14px"}}>
+            {activeTab==="catch"&&(
+              <>
+                {!data&&<p style={{color:dex.screenMuted,fontSize:13,fontFamily:"monospace"}}>No data available.</p>}
+                {data?.games.map((g:any,i:number)=>(
+                  <div key={i} style={{marginBottom:14}}>
+                    <p style={{margin:"0 0 6px",fontSize:12,color:typeColor,fontWeight:500,textTransform:"uppercase",letterSpacing:"0.05em",fontFamily:"monospace"}}>{g.game}</p>
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      {g.locations.map((loc:any,j:number)=>{
+                        const mc=METHOD_COLORS[loc.method]||METHOD_COLORS.event;
+                        return (
+                          <div key={j} style={{display:"flex",justifyContent:"space-between",alignItems:"center",background:dex.screenBg,borderRadius:6,padding:"6px 10px",gap:8,border:`0.5px solid ${dex.screenDim}`}}>
+                            <span style={{fontSize:12,color:dex.screenText,fontFamily:"monospace"}}>{loc.name}</span>
+                            <span style={{display:"flex",gap:6,alignItems:"center",flexShrink:0}}>
+                              <span style={{fontSize:10,padding:"2px 6px",borderRadius:4,background:mc.bg,color:mc.text,fontWeight:500}}>{loc.method}</span>
+                              {loc.rate&&<span style={{fontSize:11,color:dex.screenMuted}}>{loc.rate}</span>}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+                  </div>
+                ))}
+              </>
+            )}
+            {activeTab==="levelup"&&(loading?<PokeballSpinner/>:<MoveTable moves={levelMoves}/>)}
+            {activeTab==="tm"&&(loading?<PokeballSpinner/>:<MoveTable moves={tmMoves}/>)}
+          </div>
         </div>
         <div style={{background:dex.red,padding:"10px 16px",display:"flex",justifyContent:"flex-end",gap:8,flexShrink:0}}>
           <div style={{width:40,height:8,borderRadius:4,background:dex.darkRed}}/>
@@ -342,28 +513,28 @@ function DetailPanel({mon,onClose}){
 export default function App(){
   const [username,setUsername]=useState("");
   const [inputName,setInputName]=useState("");
-  const [caught,setCaught]=useState({});
+  const [caught,setCaught]=useState<{[key:string]:boolean}>({});
   const [filter,setFilter]=useState("all");
   const [search,setSearch]=useState("");
   const [genVisible,setGenVisible]=useState(true);
-  const [detail,setDetail]=useState(null);
+  const [detail,setDetail]=useState<any>(null);
   const [saving,setSaving]=useState(false);
-  const [friends,setFriends]=useState([]);
+  const [friends,setFriends]=useState<{name:string,count:number}[]>([]);
   const [tab,setTab]=useState("tracker");
   const [quickEntry,setQuickEntry]=useState("");
   const [quickFeedback,setQuickFeedback]=useState("");
   const [viewMode,setViewMode]=useState("grid");
-  const [selected,setSelected]=useState(new Set());
+  const [selected,setSelected]=useState(new Set<number>());
   const [selectMode,setSelectMode]=useState(false);
-  const [lastClicked,setLastClicked]=useState(null);
-  const [savedProfiles,setSavedProfiles]=useState([]);
+  const [lastClicked,setLastClicked]=useState<number|null>(null);
+  const [savedProfiles,setSavedProfiles]=useState<{name:string,count:number}[]>([]);
 
-  const loadUser=useCallback(async(name)=>{
+  const loadUser=useCallback(async(name:string)=>{
     try{const v=await getItem(`dex:${name.toLowerCase()}`);setCaught(v?JSON.parse(v):{});}
     catch{setCaught({});}
   },[]);
 
-  const saveUser=useCallback(async(name,data)=>{
+  const saveUser=useCallback(async(name:string,data:any)=>{
     try{setSaving(true);await setItem(`dex:${name.toLowerCase()}`,JSON.stringify(data));}
     catch(e){console.error(e);}finally{setSaving(false);}
   },[]);
@@ -372,22 +543,22 @@ export default function App(){
     try{
       const keys=await listKeys("dex:");
       if(!keys.length){setSavedProfiles([]);return;}
-      const entries=await Promise.all(keys.map(async k=>{
+      const entries=await Promise.all(keys.map(async(k:string)=>{
         try{const v=await getItem(k);const d=v?JSON.parse(v):{};return{name:k.replace("dex:",""),count:Object.values(d).filter(Boolean).length};}
         catch{return null;}
       }));
-      setSavedProfiles(entries.filter(Boolean).sort((a,b)=>b.count-a.count));
+      setSavedProfiles((entries.filter(Boolean) as {name:string,count:number}[]).sort((a,b)=>b.count-a.count));
     }catch(e){console.error(e);}
   },[]);
 
   const loadFriends=useCallback(async()=>{
     try{
       const keys=await listKeys("dex:");
-      const entries=await Promise.all(keys.map(async k=>{
+      const entries=await Promise.all(keys.map(async(k:string)=>{
         try{const v=await getItem(k);const d=v?JSON.parse(v):{};return{name:k.replace("dex:",""),count:Object.values(d).filter(Boolean).length};}
         catch{return null;}
       }));
-      setFriends(entries.filter(Boolean).sort((a,b)=>b.count-a.count));
+      setFriends((entries.filter(Boolean) as {name:string,count:number}[]).sort((a,b)=>b.count-a.count));
     }catch(e){console.error(e);}
   },[]);
 
@@ -395,15 +566,15 @@ export default function App(){
   useEffect(()=>{if(tab==="friends")loadFriends();},[tab,loadFriends]);
 
   useEffect(()=>{
-    const handler=(e)=>{
-      if(e.target.tagName==="INPUT"||e.target.tagName==="SELECT")return;
+    const handler=(e:KeyboardEvent)=>{
+      if((e.target as HTMLElement).tagName==="INPUT"||(e.target as HTMLElement).tagName==="SELECT")return;
       if(e.key==="s"||e.key==="S"){setSelectMode(v=>!v);setSelected(new Set());setLastClicked(null);}
     };
     window.addEventListener("keydown",handler);
     return()=>window.removeEventListener("keydown",handler);
   },[]);
 
-  const handleLogin=(name)=>{
+  const handleLogin=(name?:string)=>{
     const n=(name||inputName).trim();
     if(!n)return;
     setUsername(n);
@@ -412,31 +583,31 @@ export default function App(){
 
   const handleLogout=()=>{setUsername("");setInputName("");setCaught({});loadProfiles();};
 
-  const toggleCaught=(id)=>{
+  const toggleCaught=(id:number)=>{
     const next={...caught,[id]:!caught[id]};
     setCaught(next);
     if(username)saveUser(username,next);
   };
 
-  const handleCardClick=(mon,e,openDetail)=>{
+  const handleCardClick=(mon:any,e:React.MouseEvent,openDetail:()=>void)=>{
     if(selectMode){
       e.preventDefault();
-      const visibleIds=filtered.map(p=>p.id);
+      const visibleIds=filtered.map((p:any)=>p.id);
       const clickedIdx=visibleIds.indexOf(mon.id);
       if(e.shiftKey&&lastClicked!==null&&visibleIds.includes(lastClicked)){
         const anchorIdx=visibleIds.indexOf(lastClicked);
         const [lo,hi]=[Math.min(anchorIdx,clickedIdx),Math.max(anchorIdx,clickedIdx)];
-        setSelected(prev=>{const next=new Set(prev);visibleIds.slice(lo,hi+1).forEach(id=>next.add(id));return next;});
-      } else {
+        setSelected(prev=>{const next=new Set(prev);visibleIds.slice(lo,hi+1).forEach((id:number)=>next.add(id));return next;});
+      }else{
         setSelected(prev=>{const next=new Set(prev);next.has(mon.id)?next.delete(mon.id):next.add(mon.id);return next;});
       }
       setLastClicked(mon.id);
-    } else {
+    }else{
       openDetail();
     }
   };
 
-  const toggleCheckbox=(id,e)=>{
+  const toggleCheckbox=(id:number,e:React.ChangeEvent)=>{
     e.stopPropagation();
     setSelected(prev=>{const next=new Set(prev);next.has(id)?next.delete(id):next.add(id);return next;});
     setLastClicked(id);
@@ -444,15 +615,15 @@ export default function App(){
 
   const exitSelectMode=()=>{setSelectMode(false);setSelected(new Set());setLastClicked(null);};
 
-  const applyBulk=(markAs)=>{
-    const next={...caught};
-    selected.forEach(id=>{next[id]=markAs;});
+  const applyBulk=(markAs:boolean)=>{
+    const next:{[key:string]:boolean}={...caught};
+    selected.forEach((id:any)=>{next[id]=markAs;});
     setCaught(next);
     if(username)saveUser(username,next);
     exitSelectMode();
   };
 
-  const handleQuick=(e)=>{
+  const handleQuick=(e:React.KeyboardEvent)=>{
     if(e.key!=="Enter")return;
     const val=quickEntry.trim().toLowerCase();
     const mon=allPokemon.find(p=>p.name.toLowerCase()===val||String(p.id)===val);
@@ -487,8 +658,8 @@ export default function App(){
                 return (
                   <div key={i} onClick={()=>handleLogin(p.name)}
                     style={{display:"flex",alignItems:"center",gap:12,padding:"10px 14px",background:dex.screenBg,borderRadius:8,border:`1px solid ${dex.screenDim}`,cursor:"pointer"}}
-                    onMouseEnter={e=>e.currentTarget.style.borderColor="#5588ff"}
-                    onMouseLeave={e=>e.currentTarget.style.borderColor=dex.screenDim}
+                    onMouseEnter={e=>(e.currentTarget as HTMLElement).style.borderColor="#5588ff"}
+                    onMouseLeave={e=>(e.currentTarget as HTMLElement).style.borderColor=dex.screenDim}
                   >
                     <div style={{width:40,height:40,borderRadius:"50%",background:"#1a2a3a",border:`2px solid ${dex.screenDim}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontFamily:"monospace",color:dex.screenText,fontWeight:500,flexShrink:0}}>
                       {p.name[0].toUpperCase()}
@@ -514,7 +685,7 @@ export default function App(){
             {savedProfiles.length>0?"New trainer":"Enter your trainer name to begin"}
           </p>
           <div style={{display:"flex",gap:8}}>
-            <DexInput value={inputName} onChange={e=>setInputName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleLogin()} placeholder="Trainer name..." style={{flex:1}}/>
+            <DexInput value={inputName} onChange={(e:any)=>setInputName(e.target.value)} onKeyDown={(e:any)=>e.key==="Enter"&&handleLogin()} placeholder="Trainer name..." style={{flex:1}}/>
             <DexButton onClick={()=>handleLogin()}>START</DexButton>
           </div>
         </div>
@@ -535,13 +706,11 @@ export default function App(){
         {saving&&<span style={{fontSize:11,color:"rgba(255,255,255,0.5)",fontFamily:"monospace"}}>saving...</span>}
         <button onClick={handleLogout} style={{marginLeft:"auto",background:"none",border:"1px solid rgba(255,255,255,0.3)",borderRadius:6,color:"rgba(255,255,255,0.7)",fontSize:11,padding:"3px 10px",cursor:"pointer",fontFamily:"monospace"}}>LOGOUT</button>
       </div>
-
       <div style={{background:dex.darkRed,display:"flex",padding:"0 14px",gap:2}}>
         {["tracker","friends"].map(t=>(
           <button key={t} onClick={()=>setTab(t)} style={{fontSize:12,fontFamily:"monospace",padding:"7px 14px",cursor:"pointer",border:"none",background:tab===t?dex.screen:"transparent",color:tab===t?dex.screenText:"rgba(255,255,255,0.55)",borderRadius:"6px 6px 0 0"}}>{t.toUpperCase()}</button>
         ))}
       </div>
-
       <div style={{...screenStyle,margin:"0 12px 0",borderRadius:"0 8px 8px 8px",minHeight:200}}>
         {tab==="tracker"&&(
           <>
@@ -558,12 +727,11 @@ export default function App(){
                 {genVisible?"HIDE":"SHOW"}{caughtCount===total?" ✓":""}
               </DexButton>
             </div>
-
             {genVisible&&(
               <>
                 <div style={{display:"flex",gap:6,marginBottom:8,flexWrap:"wrap",alignItems:"center"}}>
-                  <DexInput value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search name or #..." style={{flex:1,minWidth:110}}/>
-                  <DexSelect value={filter} onChange={e=>setFilter(e.target.value)}>
+                  <DexInput value={search} onChange={(e:any)=>setSearch(e.target.value)} placeholder="Search name or #..." style={{flex:1,minWidth:110}}/>
+                  <DexSelect value={filter} onChange={(e:any)=>setFilter(e.target.value)}>
                     <option value="all">All</option>
                     <option value="caught">Caught</option>
                     <option value="missing">Missing</option>
@@ -575,7 +743,7 @@ export default function App(){
                   </div>
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                  <DexInput value={quickEntry} onChange={e=>setQuickEntry(e.target.value)} onKeyDown={handleQuick} placeholder="Quick toggle: name or # + Enter" style={{flex:1}}/>
+                  <DexInput value={quickEntry} onChange={(e:any)=>setQuickEntry(e.target.value)} onKeyDown={handleQuick} placeholder="Quick toggle: name or # + Enter" style={{flex:1}}/>
                   {quickFeedback&&<span style={{fontSize:11,color:"#88cc88",fontFamily:"monospace",whiteSpace:"nowrap"}}>{quickFeedback}</span>}
                 </div>
                 <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,flexWrap:"wrap"}}>
@@ -592,11 +760,11 @@ export default function App(){
                 </div>
                 {viewMode==="grid"?(
                   <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:6}}>
-                    {filtered.map(mon=><GridCard key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox}/>)}
+                    {filtered.map((mon:any)=><GridCard key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox}/>)}
                   </div>
                 ):(
                   <div style={{border:`1px solid ${dex.screenDim}`,borderRadius:8,overflow:"hidden"}}>
-                    {filtered.map(mon=><ListRow key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox}/>)}
+                    {filtered.map((mon:any)=><ListRow key={mon.id} mon={mon} caught={!!caught[mon.id]} selected={selected.has(mon.id)} selectMode={selectMode} onToggle={toggleCaught} onDetail={setDetail} onCardClick={handleCardClick} onCheckbox={toggleCheckbox}/>)}
                   </div>
                 )}
                 {filtered.length===0&&<p style={{color:dex.screenMuted,fontSize:13,textAlign:"center",padding:"2rem 0",fontFamily:"monospace"}}>No Pokémon found.</p>}
@@ -604,7 +772,6 @@ export default function App(){
             )}
           </>
         )}
-
         {tab==="friends"&&(
           <>
             <p style={{color:dex.screenHeading,fontSize:12,marginBottom:14,fontFamily:"monospace"}}>Share your trainer name so friends can find you here.</p>
@@ -627,7 +794,6 @@ export default function App(){
           </>
         )}
       </div>
-
       <div style={{background:dex.red,padding:"10px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <div style={{display:"flex",gap:4}}>
           <div style={{width:14,height:14,borderRadius:"50%",background:dex.darkRed,border:"1px solid rgba(0,0,0,0.2)"}}/>
@@ -638,7 +804,6 @@ export default function App(){
           <div style={{width:22,height:7,borderRadius:4,background:dex.darkRed}}/>
         </div>
       </div>
-
       <DetailPanel mon={detail} onClose={()=>setDetail(null)}/>
     </div>
   );
