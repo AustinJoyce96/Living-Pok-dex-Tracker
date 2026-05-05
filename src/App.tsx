@@ -1656,7 +1656,7 @@ function DetailPanel({mon,onClose,onTypesLoaded}:{mon:any,onClose:()=>void,onTyp
       setLoading(true);
       setEncLoading(true);
       setLiveTypes([]);
-      setEncounters([]);
+      setEncounters({});
       setAvailableVersions([]);
       setVersionGroup("__none__");
       try{
@@ -2067,10 +2067,8 @@ function AppInner(){
   // ── Sign in / out ─────────────────────────────────────────────────────────
   const handleLogin=async()=>{
     try{
-      const {signInWithPopup}=await import("firebase/auth");
       await signInWithPopup(auth,googleProvider);
     }catch(e:any){
-      // If popup blocked, fall back to redirect
       if(e.code==="auth/popup-blocked"||e.code==="auth/cancelled-popup-request"){
         await signInWithRedirect(auth,googleProvider);
       } else {
