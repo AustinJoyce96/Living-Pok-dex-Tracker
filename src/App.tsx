@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, Component } from "react";
 import { ITEM_ACQUISITION, type AcquisitionEntry } from "./itemData";
-import { auth, db, googleProvider, ALLOWED_EMAILS, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, doc, setDoc, getDoc, onSnapshot, collection, getDocs, type User } from "./firebase";
+import { auth, db, googleProvider, ALLOWED_EMAILS, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, doc, setDoc, getDoc, onSnapshot, collection, getDocs, type User } from "./firebase";
 
 class ErrorBoundary extends Component<{children:any},{error:any}>{
   constructor(props:any){super(props);this.state={error:null};}
@@ -1133,7 +1133,7 @@ function TeamAnalysis({slots,basicMode}:{slots:TeamSlot[],basicMode:boolean}){
                     const mult=slot.pokemon
                       ?(isDefending?getDefMult(slot,rowType):getAtkMult(slot,rowType))
                       :null;
-                    const mc=mult!==null?multColor(mult):{bg:"transparent",text:dex.screenDim,label:""};
+                    const mc=mult!==null?multColor(mult):{bg:"transparent",text:dex.screenDim,label:"",fs:12};
                     return (
                       <td key={si} style={{padding:"3px 4px",textAlign:"center",borderBottom:`1px solid ${dex.screenDim}22`}}>
                         {mult!==null?(
